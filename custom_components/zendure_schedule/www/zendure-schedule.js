@@ -502,8 +502,9 @@ class ZendureScheduleCard extends HTMLElement {
           <div class="actions">
             <button type="button" data-action="all-nom">Alles NOM</button>
             <button type="button" data-action="all-off">Alles uit</button>
-            <button type="button" data-action="apply-now">Nu toepassen</button>
+            <button type="button" class="apply-now-btn" data-action="apply-now">Nu toepassen</button>
           </div>
+          <div class="apply-feedback" aria-live="polite"></div>
 
           <div class="hint">
             NOM = <code>smart</code>. NOM-O = <code>smart_discharging</code>.
@@ -536,6 +537,8 @@ class ZendureScheduleCard extends HTMLElement {
       powerWrap: card.querySelector(".power-wrap"),
       powerSlider: card.querySelector(".power-slider"),
       powerValue: card.querySelector(".power-value"),
+      applyBtn: card.querySelector(".apply-now-btn"),
+      applyFeedback: card.querySelector(".apply-feedback"),
     };
 
     this._els.toggleBtn.addEventListener("click", () => {
@@ -582,8 +585,7 @@ class ZendureScheduleCard extends HTMLElement {
           this._selectedHour = null;
           this._afterScheduleEdit();
         } else if (action === "apply-now") {
-          this._persist();
-          this._maybeApplySchedule(true);
+          this._onApplyNowClick();
         }
       });
     });
@@ -846,37 +848,143 @@ class ZendureScheduleCard extends HTMLElement {
     });
   }
 
-  async _maybeApplySchedule(force = false) {
-    if (!this._hass || !this._config?.entity) return;
+  async _onApplyNowClick() {
+    if (this._applyBusy) return;
+    this._applyBusy = true;
+    const btn = this._els?.applyBtn;
+    if (btn) {
+      btn.disabled = true;
+      btn.classList.remove("is-ok", "is-error");
+      btn.classList.add("is-busy");
+      btn.textContent = "Bezig…";
+    }
+    this._showApplyFeedback("Bezig met toepassen…", "busy");
+
+    try {
+      this._persist();
+      this._flushStorageWrite();
+      const result = await this._maybeApplySchedule(true, true);
+      const message = result?.message || "Klaar";
+      const ok = result?.ok !== false;
+      this._showApplyFeedback(message, ok ? "ok" : "error");
+      this._hassNotify(message);
+      if (btn) {
+        btn.classList.remove("is-busy");
+        btn.classList.add(ok ? "is-ok" : "is-error");
+        btn.textContent = ok ? "Toegepast ✓" : "Mislukt";
+      }
+    } catch (err) {
+      console.error("Zendure Schedule Card: apply-now failed", err);
+      const message = "Toepassen mislukt";
+      this._showApplyFeedback(message, "error");
+      this._hassNotify(message);
+      if (btn) {
+        btn.classList.remove("is-busy");
+        btn.classList.add("is-error");
+        btn.textContent = "Mislukt";
+      }
+    } finally {
+      window.setTimeout(() => {
+        if (btn) {
+          btn.disabled = false;
+          btn.classList.remove("is-busy", "is-ok", "is-error");
+          btn.textContent = "Nu toepassen";
+        }
+        this._applyBusy = false;
+      }, 2200);
+    }
+  }
+
+  _showApplyFeedback(message, state = "") {
+    const el = this._els?.applyFeedback;
+    if (!el) return;
+    el.textContent = message || "";
+    el.classList.remove("is-ok", "is-error", "is-busy", "is-visible");
+    if (!message) return;
+    if (state) el.classList.add(`is-${state}`);
+    el.classList.add("is-visible");
+  }
+
+  _hassNotify(message) {
+    if (!message) return;
+    try {
+      this.dispatchEvent(
+        new CustomEvent("hass-notification", {
+          detail: { message },
+          bubbles: true,
+          composed: true,
+        })
+      );
+    } catch (_e) {
+      /* ignore */
+    }
+  }
+
+  _describeSlot(hour, slot) {
+    const label = MODE_LABEL[slot.mode] || slot.mode;
+    const hh = String(hour).padStart(2, "0");
+    if (slot.mode === "charge" || slot.mode === "discharge") {
+      return `Uur ${hh}:00 → ${label} ${Math.round(slot.power || 0)} W`;
+    }
+    return `Uur ${hh}:00 → ${label}`;
+  }
+
+  /**
+   * @param {boolean} force
+   * @param {boolean} withResult  when true, always return a status object
+   */
+  async _maybeApplySchedule(force = false, withResult = false) {
+    const fail = (message) => {
+      if (withResult) return { ok: false, message };
+      return undefined;
+    };
+    const ok = (message, extra = {}) => {
+      if (withResult) return { ok: true, message, ...extra };
+      return undefined;
+    };
+
+    if (!this._hass) return fail("Home Assistant niet beschikbaar");
+    if (!this._config?.entity) {
+      return fail("Geen operation-entity geconfigureerd");
+    }
     if (this._storageEntityId()) {
       if (this._localEditPending) {
         this._flushStorageWrite();
       } else {
         this._pullStorageEntity();
       }
-      if (!this._storageSynced) return;
+      if (!this._storageSynced) {
+        return fail("Schema nog niet gesynchroniseerd");
+      }
     }
 
     const hour = new Date().getHours();
     const slot = this._schedule[hour] || this._defaultSlot();
+    const summary = this._describeSlot(hour, slot);
 
     if (!this._enabled) {
       const offKey = `${hour}:disabled`;
-      if (!force && this._lastAppliedKey === offKey) return;
+      if (!force && this._lastAppliedKey === offKey) {
+        return ok("Planner staat uit — niets gewijzigd");
+      }
       this._lastAppliedKey = offKey;
-      return;
+      return ok("Planner staat uit — niets gewijzigd");
     }
 
     const key = `${hour}:${slot.mode}:${Math.round(slot.power || 0)}`;
-    if (!force && this._lastAppliedKey === key) return;
+    if (!force && this._lastAppliedKey === key) {
+      return ok(`Al actief: ${summary}`);
+    }
 
     try {
       if (slot.mode === "off") {
         if (this._config.off_option) {
           await this._selectOption(this._config.entity, this._config.off_option);
+          this._lastAppliedKey = key;
+          return ok(`${summary} toegepast`);
         }
         this._lastAppliedKey = key;
-        return;
+        return ok(`${summary} (geen wijziging)`);
       }
 
       if (slot.mode === "nom") {
@@ -885,7 +993,7 @@ class ZendureScheduleCard extends HTMLElement {
           this._config.nom_option || "smart"
         );
         this._lastAppliedKey = key;
-        return;
+        return ok(`${summary} toegepast`);
       }
 
       if (slot.mode === "nom_o") {
@@ -894,7 +1002,7 @@ class ZendureScheduleCard extends HTMLElement {
           this._config.nom_o_option || "smart_discharging"
         );
         this._lastAppliedKey = key;
-        return;
+        return ok(`${summary} toegepast`);
       }
 
       // charge / discharge → operation off + richting + juiste power entity
@@ -917,8 +1025,10 @@ class ZendureScheduleCard extends HTMLElement {
         slot.power
       );
       this._lastAppliedKey = key;
+      return ok(`${summary} toegepast`);
     } catch (err) {
       console.error("Zendure Schedule Card: apply failed", err);
+      return fail(`Mislukt: ${summary}`);
     }
   }
 
@@ -1112,6 +1222,39 @@ class ZendureScheduleCard extends HTMLElement {
       }
       .actions button:hover {
         background: rgba(63,182,255,0.16); border-color: rgba(63,182,255,0.5);
+      }
+      .actions button:disabled { opacity: 0.75; cursor: default; }
+      .actions button.apply-now-btn.is-busy {
+        border-color: rgba(63,182,255,0.65);
+        background: rgba(63,182,255,0.18);
+      }
+      .actions button.apply-now-btn.is-ok {
+        border-color: rgba(76,175,80,0.7);
+        background: rgba(76,175,80,0.22);
+        color: #eaffef;
+      }
+      .actions button.apply-now-btn.is-error {
+        border-color: rgba(244,67,54,0.7);
+        background: rgba(244,67,54,0.18);
+        color: #ffebee;
+      }
+      .apply-feedback {
+        display: none; margin-top: 10px; padding: 8px 10px;
+        border-radius: 8px; font-size: 12px; line-height: 1.35;
+        border: 1px solid transparent;
+      }
+      .apply-feedback.is-visible { display: block; }
+      .apply-feedback.is-busy {
+        color: #d8e6ee; border-color: rgba(63,182,255,0.35);
+        background: rgba(63,182,255,0.1);
+      }
+      .apply-feedback.is-ok {
+        color: #eaffef; border-color: rgba(76,175,80,0.45);
+        background: rgba(76,175,80,0.16);
+      }
+      .apply-feedback.is-error {
+        color: #ffebee; border-color: rgba(244,67,54,0.45);
+        background: rgba(244,67,54,0.14);
       }
       .hint { margin-top: 12px; color: #6f93a6; font-size: 11px; line-height: 1.4; }
     `;
