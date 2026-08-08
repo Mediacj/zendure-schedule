@@ -1,4 +1,20 @@
-# Home Assistant: Zendure Schedule (`custom_components/zendure_schedule`)
+<p align="center">
+  <img src="images/energienerds.png" alt="Energienerds" width="140">
+</p>
+
+<h1 align="center">Zendure Schedule</h1>
+
+<p align="center">
+  Home Assistant-integratie van <a href="https://energienerds.nl/">Energienerds.nl</a><br>
+  24u-planner voor Zendure: NOM / NOM-O / laden / ontladen
+</p>
+
+<p align="center">
+  <a href="https://github.com/Mediacj/zendure-schedule"><img src="https://img.shields.io/github/v/release/Mediacj/zendure-schedule?style=flat-square" alt="release"></a>
+  <a href="https://github.com/hacs/integration"><img src="https://img.shields.io/badge/HACS-Custom-orange.svg?style=flat-square" alt="HACS"></a>
+</p>
+
+---
 
 Zelfstandige custom integration met 24u-planner voor Zendure (NOM / NOM-O / laden / ontladen).
 
