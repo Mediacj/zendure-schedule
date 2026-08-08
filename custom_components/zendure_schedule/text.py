@@ -18,6 +18,8 @@ from .const import (
     CONF_OPERATION_ENTITY,
     DEFAULT_NAME,
     DOMAIN,
+    MANUFACTURER,
+    MODEL,
 )
 from .coordinator import ZendureScheduleCoordinator
 
@@ -51,8 +53,9 @@ class ZendureScheduleText(TextEntity):
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name=title,
-            manufacturer="Zendure",
-            model="Schedule Planner",
+            manufacturer=MANUFACTURER,
+            model=MODEL,
+            configuration_url="https://energienerds.nl/",
         )
 
     async def async_added_to_hass(self) -> None:

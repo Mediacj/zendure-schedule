@@ -21,6 +21,8 @@ CONF_MIN_POWER = "min_power"
 CONF_POWER_STEP = "power_step"
 
 DEFAULT_NAME = "Zendure Schedule"
+MANUFACTURER = "Energienerds.nl"
+MODEL = "Zendure Schedule"
 DEFAULT_NOM_OPTION = "smart"
 DEFAULT_NOM_O_OPTION = "smart_discharging"
 DEFAULT_CHARGE_MODE_OPTION = "off"
