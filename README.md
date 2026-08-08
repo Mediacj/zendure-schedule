@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="images/energienerds.png" alt="Energienerds" width="140">
+  <img src="https://raw.githubusercontent.com/Mediacj/zendure-schedule/main/images/energienerds.png" alt="Energienerds" width="140">
 </p>
 
 <h1 align="center">Zendure Schedule</h1>
@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Mediacj/zendure-schedule"><img src="https://img.shields.io/github/v/release/Mediacj/zendure-schedule?style=flat-square" alt="release"></a>
+  <a href="https://github.com/Mediacj/zendure-schedule"><img src="https://img.shields.io/github/last-commit/Mediacj/zendure-schedule?style=flat-square" alt="last commit"></a>
   <a href="https://github.com/hacs/integration"><img src="https://img.shields.io/badge/HACS-Custom-orange.svg?style=flat-square" alt="HACS"></a>
 </p>
 
