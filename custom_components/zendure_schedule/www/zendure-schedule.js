@@ -1130,15 +1130,25 @@ class ZendureScheduleEditor extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    this._render();
+    // Niet her-renderen op elke hass-update: dat wist toetsaanslagen weg.
+    if (!this._built) this._render();
   }
 
   connectedCallback() {
     this._render();
   }
 
+  _isFocused(el) {
+    return (
+      !!el &&
+      (el === document.activeElement ||
+        el.matches(":focus") ||
+        this.shadowRoot?.activeElement === el)
+    );
+  }
+
   _render() {
-    if (!this._hass || !this._config) return;
+    if (!this._config) return;
 
     if (!this._built) {
       this.innerHTML = `
@@ -1179,6 +1189,9 @@ class ZendureScheduleEditor extends HTMLElement {
 
       const titleInput = this.querySelector('input[data-key="title"]');
       if (titleInput) {
+        titleInput.addEventListener("input", () => {
+          this._updateConfig({ title: titleInput.value });
+        });
         titleInput.addEventListener("change", () => {
           this._updateConfig({ title: titleInput.value.trim() });
         });
@@ -1187,13 +1200,19 @@ class ZendureScheduleEditor extends HTMLElement {
       ["default_power", "max_power", "min_power"].forEach((key) => {
         const input = this.querySelector(`input[data-key="${key}"]`);
         if (!input) return;
+        const fallback = {
+          default_power: 500,
+          max_power: 2400,
+          min_power: 0,
+        }[key];
+        input.addEventListener("input", () => {
+          if (input.value === "") return;
+          const val = parseFloat(input.value);
+          if (!Number.isFinite(val) || val < 0) return;
+          this._updateConfig({ [key]: val });
+        });
         input.addEventListener("change", () => {
           const val = parseFloat(input.value);
-          const fallback = {
-            default_power: 500,
-            max_power: 2400,
-            min_power: 0,
-          }[key];
           this._updateConfig({
             [key]: Number.isFinite(val) && val >= 0 ? val : fallback,
           });
@@ -1203,14 +1222,15 @@ class ZendureScheduleEditor extends HTMLElement {
       this._built = true;
     }
 
+    // Waarden alleen syncen als het veld niet actief is (anders verdwijnt typen).
     const titleInput = this.querySelector('input[data-key="title"]');
-    if (titleInput) {
+    if (titleInput && !this._isFocused(titleInput)) {
       const val = this._config.title ?? "";
       if (titleInput.value !== String(val)) titleInput.value = val;
     }
     ["default_power", "max_power", "min_power"].forEach((key) => {
       const input = this.querySelector(`input[data-key="${key}"]`);
-      if (!input) return;
+      if (!input || this._isFocused(input)) return;
       const fallback = {
         default_power: 500,
         max_power: 2400,
@@ -1222,10 +1242,13 @@ class ZendureScheduleEditor extends HTMLElement {
   }
 
   _updateConfig(patch) {
-    this._config = { ...this._config, ...patch };
+    const next = { ...this._config, ...patch };
+    // Strip defaults die niet in YAML hoeven, behalve expliciet gezette keys.
+    const config = { ...next };
+    this._config = config;
     this.dispatchEvent(
       new CustomEvent("config-changed", {
-        detail: { config: this._config },
+        detail: { config },
         bubbles: true,
         composed: true,
       })
