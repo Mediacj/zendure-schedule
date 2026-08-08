@@ -15,7 +15,7 @@ from .const import CARD_FILENAME, DOMAIN, FRONTEND_URL_BASE
 
 _LOGGER = logging.getLogger(__name__)
 
-VERSION = "1.0.6"
+VERSION = "1.0.7"
 CARD_URL_PATH = f"{FRONTEND_URL_BASE}/{CARD_FILENAME}"
 CARD_URL = f"{CARD_URL_PATH}?v={VERSION}"
 
