@@ -21,7 +21,6 @@ Zelfstandige custom integration met 24u-planner voor Zendure (NOM / NOM-O / lade
 - Eigen Lovelace-card (automatisch geladen) — **geen** community/`www/community` resource nodig
 - Backend past elk uur toe — geen aparte automation of `input_text`-helper nodig
 - Brand-icoon in `brand/` (Energienerds) voor het integratiescherm
-- Het losse project `zendure-schedule-card/` blijft een aparte community-variant
 
 ## Installeren
 
@@ -34,28 +33,88 @@ Zelfstandige custom integration met 24u-planner voor Zendure (NOM / NOM-O / lade
    - Laadvermogen (number)
    - Ontlaadvermogen (number)
 
-De card wordt automatisch geladen via `/zendure_schedule/zendure-schedule.js`  
-(als Lovelace-module resource + frontend extra JS).  
-Verwijder eventuele oude community-resource als je alleen deze integratie wilt gebruiken.
-
-Na updaten: HA herstarten, daarna harde refresh van de browser (cache).
-
-**Check:** open in de browser `http://<jouw-ha>:8123/zendure_schedule/zendure-schedule.js` — je moet JavaScript-broncode zien. Zo niet, staat de nieuwe map niet goed op de HA-server.
-
-Handmatig (alleen nodig bij YAML-mode Lovelace): Dashboard → ⋮ → Resources → JavaScript Module:
-
-`/zendure_schedule/zendure-schedule.js`
+De card wordt automatisch geladen via `/zendure_schedule/zendure-schedule.js`.
 
 ## Dashboard card
+
+Minimaal:
 
 ```yaml
 type: custom:zendure-schedule
 title: ZENDURE PLANNER
 ```
 
-Schema-opslag en gekoppelde Zendure-entities komen uit de integratie.
+Volledig voorbeeld:
 
-## Entities
+```yaml
+type: custom:zendure-schedule
+title: ZENDURE PLANNER 2400 PRO
+enabled: true
+auto_apply: false
+entity: select.zendure_manager_operation
+direction_entity: select.solarflow_2400_pro_ac_mode
+charge_power_entity: number.solarflow_2400_pro_input_limit
+discharge_power_entity: number.solarflow_2400_pro_output_limit
+storage_entity: text.zendure_schedule_schema
+power_entity: ""
+nom_option: smart
+nom_o_option: smart_discharging
+charge_mode_option: "off"
+discharge_mode_option: "off"
+charge_option: input
+discharge_option: output
+off_option: ""
+default_power: 500
+max_power: 2400
+min_power: 0
+power_step: 100
+colors:
+  nom: "#1b8a3a"
+  nom_o: "#00e5c0"
+  charge: "#3fb6ff"
+  discharge: "#ff9800"
+  current: "#eaf6ff"
+  idle: "#7fa6b8"
+```
+
+Alle velden zijn ook bewerkbaar in de visuele HA-card-editor (inclusief color pickers).
+
+### Card YAML-velden
+
+| Veld | Type | Standaard | Beschrijving |
+|------|------|-----------|--------------|
+| `title` | string | `ZENDURE PLANNER` | Titel bovenaan de card |
+| `enabled` | bool | `true` | Startwaarde planner aan/uit (wordt overschreven door schema-opslag) |
+| `auto_apply` | bool | `false`* | Client-side toepassen vanuit de browser. Bij integratie-storage normaal **niet** nodig (backend past toe) |
+| `entity` | entity_id | *(uit integratie)* | Operation-select (`select.*`), bijv. NOM/smart |
+| `direction_entity` | entity_id | *(uit integratie)* | AC-mode select (`input` / `output`) |
+| `charge_power_entity` | entity_id | *(uit integratie)* | Number-entity voor laadvermogen |
+| `discharge_power_entity` | entity_id | *(uit integratie)* | Number-entity voor ontlaadvermogen |
+| `storage_entity` | entity_id | *(auto)* | Text/input_text met compact schema; leeg = automatisch zoeken |
+| `power_entity` | entity_id | `""` | Legacy fallback als charge/discharge-power niet gezet zijn |
+| `nom_option` | string | `smart` | Option-waarde op `entity` voor NOM |
+| `nom_o_option` | string | `smart_discharging` | Option-waarde voor NOM-O |
+| `charge_mode_option` | string | `off` | Operation-waarde bij laden |
+| `discharge_mode_option` | string | `off` | Operation-waarde bij ontladen |
+| `charge_option` | string | `input` | AC-mode waarde bij laden |
+| `discharge_option` | string | `output` | AC-mode waarde bij ontladen |
+| `off_option` | string | `""` | Option bij penseel “Uit”; leeg = niets wijzigen |
+| `default_power` | number | `500` | Standaard W bij nieuwe laad/ontlaad-uren |
+| `max_power` | number | `2400` | Maximum van de vermogensslider |
+| `min_power` | number | `0` | Minimum van de vermogensslider |
+| `power_step` | number | `50` | Stapgrootte slider (W) |
+| `colors.nom` | hex | `#1b8a3a` | Kleur NOM |
+| `colors.nom_o` | hex | `#00e5c0` | Kleur NOM-O |
+| `colors.charge` | hex | `#3fb6ff` | Kleur laden |
+| `colors.discharge` | hex | `#ff9800` | Kleur ontladen |
+| `colors.current` | hex | `#eaf6ff` | Accent huidig uur |
+| `colors.idle` | hex | `#7fa6b8` | Kleur uit/idle |
+
+\* `auto_apply` is impliciet `false` zodra er een `storage_entity` (of auto-discovered schema-text) is, tenzij je `auto_apply: true` zet.
+
+Lege entity-velden (`""`) betekenen: gebruik de entities die je in de **integratie-configuratie** hebt gekozen.
+
+## Entities (integratie)
 
 | Entity | Functie |
 |--------|---------|
@@ -72,10 +131,10 @@ Schema-opslag en gekoppelde Zendure-entities komen uit de integratie.
 
 ## Gedrag
 
-- **NOM** → operation = `smart`
-- **NOM-O** → operation = `smart_discharging`
-- **Laden** → operation `off` + ac_mode `input` + `input_limit`
-- **Ontladen** → operation `off` + ac_mode `output` + `output_limit`
+- **NOM** → operation = `smart` (`nom_option`)
+- **NOM-O** → operation = `smart_discharging` (`nom_o_option`)
+- **Laden** → operation `off` + ac_mode `input` + charge power
+- **Ontladen** → operation `off` + ac_mode `output` + discharge power
 - **Uit** → geen wijziging (tenzij `off_option` gezet)
 
 Toepassen gebeurt bij HA-start, elk heel uur, en bij schema-wijzigingen voor het huidige uur.

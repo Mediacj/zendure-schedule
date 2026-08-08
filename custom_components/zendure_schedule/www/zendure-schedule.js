@@ -1124,14 +1124,24 @@ if (!customElements.get("zendure-schedule")) {
 
 class ZendureScheduleEditor extends HTMLElement {
   setConfig(config) {
-    this._config = { ...DEFAULTS, ...config };
+    this._raw = { ...(config || {}) };
+    this._config = {
+      ...DEFAULTS,
+      ...this._raw,
+      colors: { ...DEFAULTS.colors, ...(this._raw.colors || {}) },
+    };
     this._render();
   }
 
   set hass(hass) {
     this._hass = hass;
-    // Niet her-renderen op elke hass-update: dat wist toetsaanslagen weg.
-    if (!this._built) this._render();
+    if (!this._built) {
+      this._render();
+      return;
+    }
+    this.querySelectorAll("ha-entity-picker").forEach((picker) => {
+      picker.hass = hass;
+    });
   }
 
   connectedCallback() {
@@ -1147,64 +1157,181 @@ class ZendureScheduleEditor extends HTMLElement {
     );
   }
 
+  _normalizeHex(value, fallback) {
+    const raw = String(value || "").trim();
+    if (/^#[0-9a-fA-F]{6}$/.test(raw)) return raw.toLowerCase();
+    if (/^[0-9a-fA-F]{6}$/.test(raw)) return `#${raw.toLowerCase()}`;
+    return fallback;
+  }
+
   _render() {
     if (!this._config) return;
 
     if (!this._built) {
       this.innerHTML = `
         <style>
-          .wrap { padding: 8px 0; display: flex; flex-direction: column; gap: 12px; }
+          .wrap { padding: 8px 0; display: flex; flex-direction: column; gap: 14px; }
+          .section-title {
+            font-size: 12px; font-weight: 600; letter-spacing: 0.4px;
+            color: var(--primary-text-color); margin-top: 4px;
+          }
           .row { display: flex; flex-direction: column; gap: 4px; }
           .row label { font-size: 12px; color: var(--secondary-text-color); }
-          .hint { font-size: 11px; color: var(--secondary-text-color); }
+          .hint { font-size: 11px; color: var(--secondary-text-color); line-height: 1.4; }
+          .check-row {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 13px; color: var(--primary-text-color);
+          }
           input[type="text"], input[type="number"] {
             width: 100%; box-sizing: border-box; padding: 8px 10px;
             border-radius: 8px; border: 1px solid var(--divider-color);
             background: var(--card-background-color); color: var(--primary-text-color);
           }
+          .color-row {
+            display: grid; grid-template-columns: 1fr 44px; gap: 8px; align-items: center;
+          }
+          input[type="color"] {
+            width: 44px; height: 36px; padding: 0; border: 1px solid var(--divider-color);
+            border-radius: 8px; background: transparent; cursor: pointer;
+          }
         </style>
         <div class="wrap">
+          <div class="section-title">Basis</div>
           <div class="row">
             <label>Titel</label>
             <input type="text" data-key="title" placeholder="ZENDURE PLANNER">
           </div>
+          <label class="check-row">
+            <input type="checkbox" data-key="enabled">
+            Planner standaard aan (enabled)
+          </label>
+          <label class="check-row">
+            <input type="checkbox" data-key="auto_apply">
+            Client-side auto_apply (normaal uit laten bij integratie)
+          </label>
+
+          <div class="section-title">Entities (optioneel, leeg = uit integratie)</div>
           <div class="row">
-            <label>Standaard vermogen (W)</label>
-            <input type="number" data-key="default_power" min="0" step="50" placeholder="500">
+            <label>Operation select (entity)</label>
+            <ha-entity-picker data-key="entity" domain="select" allow-custom-entity></ha-entity-picker>
           </div>
           <div class="row">
-            <label>Max vermogen slider (W)</label>
-            <input type="number" data-key="max_power" min="0" step="50" placeholder="2400">
+            <label>AC mode select (direction_entity)</label>
+            <ha-entity-picker data-key="direction_entity" domain="select" allow-custom-entity></ha-entity-picker>
           </div>
           <div class="row">
-            <label>Min vermogen slider (W)</label>
-            <input type="number" data-key="min_power" min="0" step="50" placeholder="0">
+            <label>Laadvermogen (charge_power_entity)</label>
+            <ha-entity-picker data-key="charge_power_entity" domain="number" allow-custom-entity></ha-entity-picker>
           </div>
+          <div class="row">
+            <label>Ontlaadvermogen (discharge_power_entity)</label>
+            <ha-entity-picker data-key="discharge_power_entity" domain="number" allow-custom-entity></ha-entity-picker>
+          </div>
+          <div class="row">
+            <label>Schema-opslag (storage_entity)</label>
+            <ha-entity-picker data-key="storage_entity" allow-custom-entity></ha-entity-picker>
+          </div>
+          <div class="row">
+            <label>Legacy power_entity (optioneel)</label>
+            <ha-entity-picker data-key="power_entity" domain="number" allow-custom-entity></ha-entity-picker>
+          </div>
+
+          <div class="section-title">Select-opties</div>
+          <div class="row"><label>NOM (nom_option)</label><input type="text" data-key="nom_option" placeholder="smart"></div>
+          <div class="row"><label>NOM-O (nom_o_option)</label><input type="text" data-key="nom_o_option" placeholder="smart_discharging"></div>
+          <div class="row"><label>Laden operation (charge_mode_option)</label><input type="text" data-key="charge_mode_option" placeholder="off"></div>
+          <div class="row"><label>Ontladen operation (discharge_mode_option)</label><input type="text" data-key="discharge_mode_option" placeholder="off"></div>
+          <div class="row"><label>Laden ac_mode (charge_option)</label><input type="text" data-key="charge_option" placeholder="input"></div>
+          <div class="row"><label>Ontladen ac_mode (discharge_option)</label><input type="text" data-key="discharge_option" placeholder="output"></div>
+          <div class="row"><label>Uit-penseel option (off_option)</label><input type="text" data-key="off_option" placeholder="(leeg = niets wijzigen)"></div>
+
+          <div class="section-title">Vermogen</div>
+          <div class="row"><label>Standaard vermogen (default_power)</label><input type="number" data-key="default_power" min="0" step="50"></div>
+          <div class="row"><label>Max (max_power)</label><input type="number" data-key="max_power" min="0" step="50"></div>
+          <div class="row"><label>Min (min_power)</label><input type="number" data-key="min_power" min="0" step="50"></div>
+          <div class="row"><label>Stap (power_step)</label><input type="number" data-key="power_step" min="1" step="1"></div>
+
+          <div class="section-title">Kleuren</div>
+          <div class="row">
+            <label>NOM</label>
+            <div class="color-row">
+              <input type="text" data-color="nom" placeholder="#1b8a3a">
+              <input type="color" data-color-picker="nom">
+            </div>
+          </div>
+          <div class="row">
+            <label>NOM-O</label>
+            <div class="color-row">
+              <input type="text" data-color="nom_o" placeholder="#00e5c0">
+              <input type="color" data-color-picker="nom_o">
+            </div>
+          </div>
+          <div class="row">
+            <label>Laden</label>
+            <div class="color-row">
+              <input type="text" data-color="charge" placeholder="#3fb6ff">
+              <input type="color" data-color-picker="charge">
+            </div>
+          </div>
+          <div class="row">
+            <label>Ontladen</label>
+            <div class="color-row">
+              <input type="text" data-color="discharge" placeholder="#ff9800">
+              <input type="color" data-color-picker="discharge">
+            </div>
+          </div>
+          <div class="row">
+            <label>Huidig uur</label>
+            <div class="color-row">
+              <input type="text" data-color="current" placeholder="#eaf6ff">
+              <input type="color" data-color-picker="current">
+            </div>
+          </div>
+          <div class="row">
+            <label>Idle / uit</label>
+            <div class="color-row">
+              <input type="text" data-color="idle" placeholder="#7fa6b8">
+              <input type="color" data-color-picker="idle">
+            </div>
+          </div>
+
           <div class="hint">
-            Entities en schema-opslag komen uit de Zendure Schedule-integratie
-            (Instellingen → Apparaten en services). Geen community resource nodig.
+            Lege entity-velden worden automatisch gevuld vanuit de Zendure Schedule-integratie.
+            Kleuren en opties overschrijven de standaardwaarden in de card.
           </div>
         </div>
       `;
 
-      const titleInput = this.querySelector('input[data-key="title"]');
-      if (titleInput) {
-        titleInput.addEventListener("input", () => {
-          this._updateConfig({ title: titleInput.value });
-        });
-        titleInput.addEventListener("change", () => {
-          this._updateConfig({ title: titleInput.value.trim() });
-        });
-      }
-
-      ["default_power", "max_power", "min_power"].forEach((key) => {
+      const textKeys = [
+        "title",
+        "nom_option",
+        "nom_o_option",
+        "charge_mode_option",
+        "discharge_mode_option",
+        "charge_option",
+        "discharge_option",
+        "off_option",
+      ];
+      textKeys.forEach((key) => {
         const input = this.querySelector(`input[data-key="${key}"]`);
         if (!input) return;
-        const fallback = {
-          default_power: 500,
-          max_power: 2400,
-          min_power: 0,
-        }[key];
+        input.addEventListener("input", () => {
+          this._updateConfig({ [key]: input.value });
+        });
+        input.addEventListener("change", () => {
+          this._updateConfig({ [key]: input.value.trim() });
+        });
+      });
+
+      const numberKeys = {
+        default_power: 500,
+        max_power: 2400,
+        min_power: 0,
+        power_step: 50,
+      };
+      Object.keys(numberKeys).forEach((key) => {
+        const input = this.querySelector(`input[data-key="${key}"]`);
+        if (!input) return;
         input.addEventListener("input", () => {
           if (input.value === "") return;
           const val = parseFloat(input.value);
@@ -1214,41 +1341,137 @@ class ZendureScheduleEditor extends HTMLElement {
         input.addEventListener("change", () => {
           const val = parseFloat(input.value);
           this._updateConfig({
-            [key]: Number.isFinite(val) && val >= 0 ? val : fallback,
+            [key]: Number.isFinite(val) && val >= 0 ? val : numberKeys[key],
           });
         });
       });
 
+      ["enabled", "auto_apply"].forEach((key) => {
+        const input = this.querySelector(`input[data-key="${key}"]`);
+        if (!input) return;
+        input.addEventListener("change", () => {
+          this._updateConfig({ [key]: !!input.checked });
+        });
+      });
+
+      this.querySelectorAll("ha-entity-picker").forEach((picker) => {
+        picker.addEventListener("value-changed", (ev) => {
+          const key = picker.dataset.key;
+          const value = ev.detail?.value || "";
+          this._updateConfig({ [key]: value });
+        });
+      });
+
+      ["nom", "nom_o", "charge", "discharge", "current", "idle"].forEach(
+        (colorKey) => {
+          const text = this.querySelector(`input[data-color="${colorKey}"]`);
+          const picker = this.querySelector(
+            `input[data-color-picker="${colorKey}"]`
+          );
+          if (!text || !picker) return;
+          text.addEventListener("input", () => {
+            const hex = this._normalizeHex(
+              text.value,
+              DEFAULTS.colors[colorKey]
+            );
+            if (/^#[0-9a-f]{6}$/.test(String(text.value).trim().toLowerCase()) ||
+                /^[0-9a-f]{6}$/i.test(String(text.value).trim())) {
+              picker.value = hex;
+              this._updateConfig({ colors: { [colorKey]: hex } });
+            }
+          });
+          text.addEventListener("change", () => {
+            const hex = this._normalizeHex(
+              text.value,
+              DEFAULTS.colors[colorKey]
+            );
+            text.value = hex;
+            picker.value = hex;
+            this._updateConfig({ colors: { [colorKey]: hex } });
+          });
+          picker.addEventListener("input", () => {
+            text.value = picker.value;
+            this._updateConfig({ colors: { [colorKey]: picker.value } });
+          });
+        }
+      );
+
       this._built = true;
     }
 
-    // Waarden alleen syncen als het veld niet actief is (anders verdwijnt typen).
-    const titleInput = this.querySelector('input[data-key="title"]');
-    if (titleInput && !this._isFocused(titleInput)) {
-      const val = this._config.title ?? "";
-      if (titleInput.value !== String(val)) titleInput.value = val;
+    if (this._hass) {
+      this.querySelectorAll("ha-entity-picker").forEach((picker) => {
+        picker.hass = this._hass;
+        const key = picker.dataset.key;
+        const val = this._config[key] || "";
+        if (picker.value !== val) picker.value = val;
+      });
     }
-    ["default_power", "max_power", "min_power"].forEach((key) => {
+
+    const syncText = [
+      "title",
+      "nom_option",
+      "nom_o_option",
+      "charge_mode_option",
+      "discharge_mode_option",
+      "charge_option",
+      "discharge_option",
+      "off_option",
+    ];
+    syncText.forEach((key) => {
       const input = this.querySelector(`input[data-key="${key}"]`);
       if (!input || this._isFocused(input)) return;
-      const fallback = {
-        default_power: 500,
-        max_power: 2400,
-        min_power: 0,
-      }[key];
-      const val = this._config[key] ?? fallback;
+      const val = this._config[key] ?? "";
       if (input.value !== String(val)) input.value = val;
     });
+
+    ["default_power", "max_power", "min_power", "power_step"].forEach((key) => {
+      const input = this.querySelector(`input[data-key="${key}"]`);
+      if (!input || this._isFocused(input)) return;
+      const val = this._config[key];
+      if (input.value !== String(val)) input.value = val;
+    });
+
+    ["enabled", "auto_apply"].forEach((key) => {
+      const input = this.querySelector(`input[data-key="${key}"]`);
+      if (!input) return;
+      const checked = key === "auto_apply" ? !!this._raw.auto_apply : !!this._config.enabled;
+      if (input.checked !== checked) input.checked = checked;
+    });
+
+    ["nom", "nom_o", "charge", "discharge", "current", "idle"].forEach(
+      (colorKey) => {
+        const text = this.querySelector(`input[data-color="${colorKey}"]`);
+        const picker = this.querySelector(
+          `input[data-color-picker="${colorKey}"]`
+        );
+        if (!text || !picker) return;
+        const hex = this._normalizeHex(
+          this._config.colors?.[colorKey],
+          DEFAULTS.colors[colorKey]
+        );
+        if (!this._isFocused(text) && text.value !== hex) text.value = hex;
+        if (picker.value !== hex) picker.value = hex;
+      }
+    );
   }
 
   _updateConfig(patch) {
-    const next = { ...this._config, ...patch };
-    // Strip defaults die niet in YAML hoeven, behalve expliciet gezette keys.
-    const config = { ...next };
-    this._config = config;
+    const raw = { ...(this._raw || {}) };
+    if (patch.colors) {
+      raw.colors = { ...(raw.colors || {}), ...patch.colors };
+      delete patch.colors;
+    }
+    Object.assign(raw, patch);
+    this._raw = raw;
+    this._config = {
+      ...DEFAULTS,
+      ...raw,
+      colors: { ...DEFAULTS.colors, ...(raw.colors || {}) },
+    };
     this.dispatchEvent(
       new CustomEvent("config-changed", {
-        detail: { config },
+        detail: { config: { ...raw } },
         bubbles: true,
         composed: true,
       })
