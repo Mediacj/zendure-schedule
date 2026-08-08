@@ -9,7 +9,7 @@ Zelfstandige custom integration met 24u-planner voor Zendure (NOM / NOM-O / lade
 
 ## Installeren
 
-1. Kopieer `custom_components/zendure_schedule` naar de `custom_components`-map van je Home Assistant-configuratie.
+1. Installeer via HACS (custom repository) of kopieer `custom_components/zendure_schedule` naar je Home Assistant `custom_components`-map.
 2. Herstart Home Assistant.
 3. Ga naar **Instellingen → Apparaten en services → Integratie toevoegen** en zoek **Zendure Schedule**.
 4. Kies zelf je entities (velden starten leeg):
