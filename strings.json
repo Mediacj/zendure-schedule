@@ -1,0 +1,55 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Zendure Schedule",
+        "description": "Koppel de Zendure operation-, richting- en vermogensentities. De integratie past het 24u-schema elk uur toe.",
+        "data": {
+          "name": "Naam",
+          "operation_entity": "Operation select (NOM/off)",
+          "direction_entity": "AC mode select (input/output)",
+          "charge_power_entity": "Laadvermogen (input_limit)",
+          "discharge_power_entity": "Ontlaadvermogen (output_limit)",
+          "nom_option": "NOM-optie",
+          "nom_o_option": "NOM-O-optie",
+          "charge_mode_option": "Laden operation-optie",
+          "discharge_mode_option": "Ontladen operation-optie",
+          "charge_option": "Charge ac_mode-optie",
+          "discharge_option": "Discharge ac_mode-optie",
+          "default_power": "Standaard vermogen (W)",
+          "max_power": "Max vermogen (W)",
+          "min_power": "Min vermogen (W)",
+          "power_step": "Vermogensstap (W)"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Deze operation-entity is al geconfigureerd."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Zendure Schedule - instellingen",
+        "description": "Pas gekoppelde entities en vermogenslimieten aan.",
+        "data": {
+          "name": "Naam",
+          "operation_entity": "Operation select (NOM/off)",
+          "direction_entity": "AC mode select (input/output)",
+          "charge_power_entity": "Laadvermogen (input_limit)",
+          "discharge_power_entity": "Ontlaadvermogen (output_limit)",
+          "nom_option": "NOM-optie",
+          "nom_o_option": "NOM-O-optie",
+          "charge_mode_option": "Laden operation-optie",
+          "discharge_mode_option": "Ontladen operation-optie",
+          "charge_option": "Charge ac_mode-optie",
+          "discharge_option": "Discharge ac_mode-optie",
+          "default_power": "Standaard vermogen (W)",
+          "max_power": "Max vermogen (W)",
+          "min_power": "Min vermogen (W)",
+          "power_step": "Vermogensstap (W)"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+apply_now:
+  name: Nu toepassen
+  description: Pas het schema voor het huidige uur direct toe op de Zendure entities.
+  fields:
+    entry_id:
+      name: Config entry id
+      description: Optioneel. Laat leeg om alle Zendure Schedule entries toe te passen.
+      required: false
+      example: "01ABCDEF..."
+      selector:
+        text:
+
+set_schedule:
+  name: Schema instellen
+  description: Zet het compacte schema (e=1;m=...;p=...).
+  fields:
+    value:
+      name: Schema
+      description: Compact formaat e=1;m=oonxc...;p=0,0,500,...
+      required: true
+      example: "e=1;m=nnnnccccccccccccccccdddd;p=500,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500"
+      selector:
+        text:
+    entry_id:
+      name: Config entry id
+      description: Optioneel. Laat leeg om de eerste/alle entries te updaten.
+      required: false
+      selector:
+        text:

@@ -1,0 +1,55 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Zendure Schedule",
+        "description": "Link the Zendure operation, direction and power entities. The integration applies the 24h schedule every hour.",
+        "data": {
+          "name": "Name",
+          "operation_entity": "Operation select (NOM/off)",
+          "direction_entity": "AC mode select (input/output)",
+          "charge_power_entity": "Charge power (input_limit)",
+          "discharge_power_entity": "Discharge power (output_limit)",
+          "nom_option": "NOM option",
+          "nom_o_option": "NOM-O option",
+          "charge_mode_option": "Charge operation option",
+          "discharge_mode_option": "Discharge operation option",
+          "charge_option": "Charge ac_mode option",
+          "discharge_option": "Discharge ac_mode option",
+          "default_power": "Default power (W)",
+          "max_power": "Max power (W)",
+          "min_power": "Min power (W)",
+          "power_step": "Power step (W)"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This operation entity is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Zendure Schedule - options",
+        "description": "Update linked entities and power limits.",
+        "data": {
+          "name": "Name",
+          "operation_entity": "Operation select (NOM/off)",
+          "direction_entity": "AC mode select (input/output)",
+          "charge_power_entity": "Charge power (input_limit)",
+          "discharge_power_entity": "Discharge power (output_limit)",
+          "nom_option": "NOM option",
+          "nom_o_option": "NOM-O option",
+          "charge_mode_option": "Charge operation option",
+          "discharge_mode_option": "Discharge operation option",
+          "charge_option": "Charge ac_mode option",
+          "discharge_option": "Discharge ac_mode option",
+          "default_power": "Default power (W)",
+          "max_power": "Max power (W)",
+          "min_power": "Min power (W)",
+          "power_step": "Power step (W)"
+        }
+      }
+    }
+  }
+}
