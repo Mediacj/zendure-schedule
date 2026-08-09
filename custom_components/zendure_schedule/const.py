@@ -8,6 +8,8 @@ CONF_OPERATION_ENTITY = "operation_entity"
 CONF_DIRECTION_ENTITY = "direction_entity"
 CONF_CHARGE_POWER_ENTITY = "charge_power_entity"
 CONF_DISCHARGE_POWER_ENTITY = "discharge_power_entity"
+CONF_CHARGE_SOC_ENTITY = "charge_soc_entity"
+CONF_DISCHARGE_SOC_ENTITY = "discharge_soc_entity"
 CONF_NOM_OPTION = "nom_option"
 CONF_NOM_O_OPTION = "nom_o_option"
 CONF_CHARGE_MODE_OPTION = "charge_mode_option"
@@ -19,6 +21,8 @@ CONF_DEFAULT_POWER = "default_power"
 CONF_MAX_POWER = "max_power"
 CONF_MIN_POWER = "min_power"
 CONF_POWER_STEP = "power_step"
+CONF_DEFAULT_CHARGE_SOC = "default_charge_soc"
+CONF_DEFAULT_DISCHARGE_SOC = "default_discharge_soc"
 
 DEFAULT_NAME = "Zendure Schedule"
 MANUFACTURER = "Energienerds.nl"
@@ -34,6 +38,8 @@ DEFAULT_DEFAULT_POWER = 500
 DEFAULT_MAX_POWER = 2400
 DEFAULT_MIN_POWER = 0
 DEFAULT_POWER_STEP = 50
+DEFAULT_CHARGE_SOC = 100
+DEFAULT_DISCHARGE_SOC = 10
 
 MODE_OFF = "off"
 MODE_NOM = "nom"

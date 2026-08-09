@@ -10,6 +10,8 @@
           "direction_entity": "AC mode select (input/output)",
           "charge_power_entity": "Charge power (input_limit)",
           "discharge_power_entity": "Discharge power (output_limit)",
+          "charge_soc_entity": "Max SOC when charging (soc_set)",
+          "discharge_soc_entity": "Min SOC when discharging (min_soc)",
           "nom_option": "NOM option",
           "nom_o_option": "NOM-O option",
           "charge_mode_option": "Charge operation option",
@@ -19,7 +21,9 @@
           "default_power": "Default power (W)",
           "max_power": "Max power (W)",
           "min_power": "Min power (W)",
-          "power_step": "Power step (W)"
+          "power_step": "Power step (W)",
+          "default_charge_soc": "Default max SOC when charging (%)",
+          "default_discharge_soc": "Default min SOC when discharging (%)"
         }
       }
     },
@@ -38,6 +42,8 @@
           "direction_entity": "AC mode select (input/output)",
           "charge_power_entity": "Charge power (input_limit)",
           "discharge_power_entity": "Discharge power (output_limit)",
+          "charge_soc_entity": "Max SOC when charging (soc_set)",
+          "discharge_soc_entity": "Min SOC when discharging (min_soc)",
           "nom_option": "NOM option",
           "nom_o_option": "NOM-O option",
           "charge_mode_option": "Charge operation option",
@@ -47,7 +53,9 @@
           "default_power": "Default power (W)",
           "max_power": "Max power (W)",
           "min_power": "Min power (W)",
-          "power_step": "Power step (W)"
+          "power_step": "Power step (W)",
+          "default_charge_soc": "Default max SOC when charging (%)",
+          "default_discharge_soc": "Default min SOC when discharging (%)"
         }
       }
     }

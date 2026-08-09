@@ -16,11 +16,15 @@ from .const import (
     CONF_CHARGE_MODE_OPTION,
     CONF_CHARGE_OPTION,
     CONF_CHARGE_POWER_ENTITY,
+    CONF_CHARGE_SOC_ENTITY,
+    CONF_DEFAULT_CHARGE_SOC,
+    CONF_DEFAULT_DISCHARGE_SOC,
     CONF_DEFAULT_POWER,
     CONF_DIRECTION_ENTITY,
     CONF_DISCHARGE_MODE_OPTION,
     CONF_DISCHARGE_OPTION,
     CONF_DISCHARGE_POWER_ENTITY,
+    CONF_DISCHARGE_SOC_ENTITY,
     CONF_MAX_POWER,
     CONF_MIN_POWER,
     CONF_NOM_O_OPTION,
@@ -30,9 +34,11 @@ from .const import (
     CONF_POWER_STEP,
     DEFAULT_CHARGE_MODE_OPTION,
     DEFAULT_CHARGE_OPTION,
+    DEFAULT_CHARGE_SOC,
     DEFAULT_DEFAULT_POWER,
     DEFAULT_DISCHARGE_MODE_OPTION,
     DEFAULT_DISCHARGE_OPTION,
+    DEFAULT_DISCHARGE_SOC,
     DEFAULT_MAX_POWER,
     DEFAULT_MIN_POWER,
     DEFAULT_NOM_O_OPTION,
@@ -47,6 +53,8 @@ from .const import (
     MODE_OFF,
 )
 from .schedule import (
+    clamp_soc,
+    default_soc_for_mode,
     empty_compact,
     normalize_schedule,
     parse_compact,
@@ -95,14 +103,51 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         step = int(self._cfg(CONF_POWER_STEP, DEFAULT_POWER_STEP))
         return step if step > 0 else DEFAULT_POWER_STEP
 
+    @property
+    def default_charge_soc(self) -> int:
+        return clamp_soc(
+            self._cfg(CONF_DEFAULT_CHARGE_SOC, DEFAULT_CHARGE_SOC),
+            DEFAULT_CHARGE_SOC,
+        )
+
+    @property
+    def default_discharge_soc(self) -> int:
+        return clamp_soc(
+            self._cfg(CONF_DEFAULT_DISCHARGE_SOC, DEFAULT_DISCHARGE_SOC),
+            DEFAULT_DISCHARGE_SOC,
+        )
+
+    def _parse(self, raw: str | None) -> dict[str, Any] | None:
+        return parse_compact(
+            raw,
+            self.default_power,
+            charge_soc=self.default_charge_soc,
+            discharge_soc=self.default_discharge_soc,
+        )
+
+    def _serialize(self, enabled: bool, hours: list[dict[str, Any]]) -> str:
+        return serialize_compact(
+            enabled,
+            hours,
+            self.default_power,
+            charge_soc=self.default_charge_soc,
+            discharge_soc=self.default_discharge_soc,
+        )
+
     def _fresh_data(self) -> dict[str, Any]:
-        hours = normalize_schedule(None, self.default_power)
+        hours = normalize_schedule(
+            None,
+            self.default_power,
+            charge_soc=self.default_charge_soc,
+            discharge_soc=self.default_discharge_soc,
+        )
         return {
             "enabled": True,
             "hours": hours,
-            "raw": serialize_compact(True, hours, self.default_power),
+            "raw": self._serialize(True, hours),
             "current_mode": MODE_OFF,
             "current_power": self.default_power,
+            "current_soc": 0,
             "current_hour": dt_util.now().hour,
         }
 
@@ -112,10 +157,14 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_setup(self) -> None:
         """Restore schedule and start hourly timer."""
         stored = self.entry.data.get("schedule_raw")
-        parsed = parse_compact(stored, self.default_power)
+        parsed = self._parse(stored)
         if parsed is None:
-            raw = empty_compact(self.default_power)
-            parsed = parse_compact(raw, self.default_power)
+            raw = empty_compact(
+                self.default_power,
+                charge_soc=self.default_charge_soc,
+                discharge_soc=self.default_discharge_soc,
+            )
+            parsed = self._parse(raw)
             assert parsed is not None
         self._set_from_parsed(parsed, notify=False)
 
@@ -137,11 +186,10 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.data = {
             "enabled": parsed["enabled"],
             "hours": parsed["hours"],
-            "raw": serialize_compact(
-                parsed["enabled"], parsed["hours"], self.default_power
-            ),
+            "raw": self._serialize(parsed["enabled"], parsed["hours"]),
             "current_mode": slot["mode"],
             "current_power": int(slot["power"]),
+            "current_soc": int(slot.get("soc", 0)),
             "current_hour": hour,
         }
         if notify:
@@ -150,7 +198,7 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_set_compact(
         self, raw: str, *, apply: bool = True, persist: bool = True
     ) -> None:
-        parsed = parse_compact(raw, self.default_power)
+        parsed = self._parse(raw)
         if parsed is None:
             _LOGGER.warning("Ongeldig Zendure-schema genegeerd: %s", raw)
             return
@@ -161,7 +209,7 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             await self.async_apply_schedule(force=True)
 
     async def async_set_enabled(self, enabled: bool) -> None:
-        raw = serialize_compact(enabled, self.data["hours"], self.default_power)
+        raw = self._serialize(enabled, self.data["hours"])
         await self.async_set_compact(raw, apply=True, persist=True)
 
     async def _async_persist_raw(self, raw: str) -> None:
@@ -188,6 +236,7 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             **self.data,
             "current_mode": slot["mode"],
             "current_power": int(slot["power"]),
+            "current_soc": int(slot.get("soc", 0)),
             "current_hour": hour,
         }
         # Re-apply at the top of the hour even if update_interval also fires.
@@ -242,7 +291,11 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_set_power(self, entity_id: str, watts: int) -> None:
         if not entity_id:
             return
-        value = self.snap_power(abs(watts))
+        await self._async_set_number(entity_id, self.snap_power(abs(watts)))
+
+    async def _async_set_number(self, entity_id: str, value: int) -> None:
+        if not entity_id:
+            return
         state = self.hass.states.get(entity_id)
         if state is not None:
             try:
@@ -263,11 +316,20 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         hour = dt_util.now().hour
         slot = self.data["hours"][hour]
         enabled = bool(self.data["enabled"])
+        soc = clamp_soc(
+            slot.get("soc"),
+            default_soc_for_mode(
+                slot["mode"],
+                charge_soc=self.default_charge_soc,
+                discharge_soc=self.default_discharge_soc,
+            ),
+        )
 
         self.data = {
             **self.data,
             "current_mode": slot["mode"],
             "current_power": int(slot["power"]),
+            "current_soc": soc,
             "current_hour": hour,
         }
         self.async_set_updated_data(self.data)
@@ -279,7 +341,7 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._last_applied_key = key
             return
 
-        key = f"{hour}:{slot['mode']}:{int(slot['power'])}"
+        key = f"{hour}:{slot['mode']}:{int(slot['power'])}:{soc}"
         if not force and self._last_applied_key == key:
             return
 
@@ -289,6 +351,8 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         direction = str(self._cfg(CONF_DIRECTION_ENTITY, ""))
         charge_power = str(self._cfg(CONF_CHARGE_POWER_ENTITY, ""))
         discharge_power = str(self._cfg(CONF_DISCHARGE_POWER_ENTITY, ""))
+        charge_soc_entity = str(self._cfg(CONF_CHARGE_SOC_ENTITY, ""))
+        discharge_soc_entity = str(self._cfg(CONF_DISCHARGE_SOC_ENTITY, ""))
         if not operation:
             _LOGGER.error("Geen operation_entity geconfigureerd")
             return
@@ -310,7 +374,7 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     str(self._cfg(CONF_NOM_O_OPTION, DEFAULT_NOM_O_OPTION)),
                 )
             elif mode in (MODE_CHARGE, MODE_DISCHARGE):
-                # Laden/ontladen: operation = off + ac_mode + power limit
+                # Laden/ontladen: operation = off + ac_mode + power + SOC
                 await self._async_select_option(
                     operation,
                     str(
@@ -337,6 +401,12 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 await self._async_set_power(
                     charge_power if mode == MODE_CHARGE else discharge_power,
                     int(slot["power"]),
+                )
+                await self._async_set_number(
+                    charge_soc_entity
+                    if mode == MODE_CHARGE
+                    else discharge_soc_entity,
+                    soc,
                 )
             self._last_applied_key = key
             _LOGGER.debug("Zendure schedule toegepast: %s", key)

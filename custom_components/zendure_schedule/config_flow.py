@@ -14,11 +14,15 @@ from .const import (
     CONF_CHARGE_MODE_OPTION,
     CONF_CHARGE_OPTION,
     CONF_CHARGE_POWER_ENTITY,
+    CONF_CHARGE_SOC_ENTITY,
+    CONF_DEFAULT_CHARGE_SOC,
+    CONF_DEFAULT_DISCHARGE_SOC,
     CONF_DEFAULT_POWER,
     CONF_DIRECTION_ENTITY,
     CONF_DISCHARGE_MODE_OPTION,
     CONF_DISCHARGE_OPTION,
     CONF_DISCHARGE_POWER_ENTITY,
+    CONF_DISCHARGE_SOC_ENTITY,
     CONF_MAX_POWER,
     CONF_MIN_POWER,
     CONF_NAME,
@@ -28,9 +32,11 @@ from .const import (
     CONF_POWER_STEP,
     DEFAULT_CHARGE_MODE_OPTION,
     DEFAULT_CHARGE_OPTION,
+    DEFAULT_CHARGE_SOC,
     DEFAULT_DEFAULT_POWER,
     DEFAULT_DISCHARGE_MODE_OPTION,
     DEFAULT_DISCHARGE_OPTION,
+    DEFAULT_DISCHARGE_SOC,
     DEFAULT_MAX_POWER,
     DEFAULT_MIN_POWER,
     DEFAULT_NAME,
@@ -54,6 +60,19 @@ def _entity_field(
     return {vol.Required(key): selector_type}
 
 
+def _optional_entity_field(
+    key: str, domain: str, defaults: dict[str, Any]
+) -> dict[Any, Any]:
+    """Optional entity picker."""
+    selector_type = selector.EntitySelector(
+        selector.EntitySelectorConfig(domain=domain)
+    )
+    current = defaults.get(key)
+    if current:
+        return {vol.Optional(key, default=current): selector_type}
+    return {vol.Optional(key): selector_type}
+
+
 def _schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
     d = defaults or {}
     fields: dict[Any, Any] = {
@@ -63,6 +82,8 @@ def _schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
     fields.update(_entity_field(CONF_DIRECTION_ENTITY, "select", d))
     fields.update(_entity_field(CONF_CHARGE_POWER_ENTITY, "number", d))
     fields.update(_entity_field(CONF_DISCHARGE_POWER_ENTITY, "number", d))
+    fields.update(_optional_entity_field(CONF_CHARGE_SOC_ENTITY, "number", d))
+    fields.update(_optional_entity_field(CONF_DISCHARGE_SOC_ENTITY, "number", d))
     fields.update(
         {
             vol.Optional(
@@ -109,6 +130,16 @@ def _schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
                 CONF_POWER_STEP,
                 default=d.get(CONF_POWER_STEP, DEFAULT_POWER_STEP),
             ): vol.All(vol.Coerce(int), vol.Range(min=1, max=1000)),
+            vol.Optional(
+                CONF_DEFAULT_CHARGE_SOC,
+                default=d.get(CONF_DEFAULT_CHARGE_SOC, DEFAULT_CHARGE_SOC),
+            ): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
+            vol.Optional(
+                CONF_DEFAULT_DISCHARGE_SOC,
+                default=d.get(
+                    CONF_DEFAULT_DISCHARGE_SOC, DEFAULT_DISCHARGE_SOC
+                ),
+            ): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
         }
     )
     return vol.Schema(fields)
