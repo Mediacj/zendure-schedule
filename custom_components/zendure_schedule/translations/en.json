@@ -21,6 +21,7 @@
           "default_power": "Default power (W)",
           "max_power": "Max power (W)",
           "min_power": "Min power (W)",
+          "power_step": "Power slider step (W, not used for rounding on apply)",
           "default_charge_soc": "Default max SOC when charging (%)",
           "default_discharge_soc": "Default min SOC when discharging (%)"
         }
@@ -52,6 +53,7 @@
           "default_power": "Default power (W)",
           "max_power": "Max power (W)",
           "min_power": "Min power (W)",
+          "power_step": "Power slider step (W, not used for rounding on apply)",
           "default_charge_soc": "Default max SOC when charging (%)",
           "default_discharge_soc": "Default min SOC when discharging (%)"
         }

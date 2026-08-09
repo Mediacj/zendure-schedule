@@ -120,6 +120,7 @@ Alle velden zijn ook bewerkbaar in de visuele HA-card-editor (inclusief color pi
 | `default_power` | number | `500` | Standaard W bij nieuwe laad/ontlaad-uren |
 | `max_power` | number | `2400` | Maximum van de vermogensslider |
 | `min_power` | number | `0` | Minimum van de vermogensslider |
+| `power_step` | number | `50` | Stap van de vermogensslider (alleen UI; wordt **niet** gebruikt om af te ronden bij toepassen) |
 | `colors.nom` | hex | `#1b8a3a` | Kleur NOM |
 | `colors.nom_o` | hex | `#00e5c0` | Kleur NOM-O |
 | `colors.charge` | hex | `#3fb6ff` | Kleur laden |
@@ -160,4 +161,4 @@ Daarnaast controleert de integratie **elke minuut** of het live vermogen/modus n
 
 **Planner uit** (hoofdschakelaar/card-toggle): zet laad- en ontlaadvermogen **één keer** op `0 W`. Daarna geen minutenchecks, geen uur-ticks en geen card-commands meer naar de batterij tot je de planner weer aanzet.
 
-Vermogen van de slider wordt **letterlijk** doorgegeven (geen power_step, geen afronding).
+`power_step` bepaalt alleen de **sliderstap** in de UI. Bij toepassen gaat de gekozen waarde **letterlijk** door — er wordt niet mee gerekend of afgerond.

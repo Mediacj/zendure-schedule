@@ -21,6 +21,7 @@
           "default_power": "Standaard vermogen (W)",
           "max_power": "Max vermogen (W)",
           "min_power": "Min vermogen (W)",
+          "power_step": "Vermogensstap slider (W, geen afronding bij toepassen)",
           "default_charge_soc": "Standaard max SOC bij laden (%)",
           "default_discharge_soc": "Standaard min SOC bij ontladen (%)"
         }
@@ -52,6 +53,7 @@
           "default_power": "Standaard vermogen (W)",
           "max_power": "Max vermogen (W)",
           "min_power": "Min vermogen (W)",
+          "power_step": "Vermogensstap slider (W, geen afronding bij toepassen)",
           "default_charge_soc": "Standaard max SOC bij laden (%)",
           "default_discharge_soc": "Standaard min SOC bij ontladen (%)"
         }

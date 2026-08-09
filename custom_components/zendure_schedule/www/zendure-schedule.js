@@ -4,7 +4,7 @@
  * Backend applies the hourly plan; entities come from the integration config.
  */
 
-const CARD_VERSION = "1.0.17";
+const CARD_VERSION = "1.0.18";
 const LOGO_URL = `/zendure_schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
 const MODES = ["off", "nom", "nom_o", "charge", "discharge"];
@@ -55,6 +55,7 @@ const DEFAULTS = {
   default_power: 500,
   max_power: 2400,
   min_power: 0,
+  power_step: 50,
   title: "ZENDURE PLANNER",
   enabled: true,
   colors: {
@@ -524,13 +525,16 @@ class ZendureScheduleCard extends HTMLElement {
   _powerLimits() {
     const min = this._configuredPower("min_power", 0);
     const max = this._configuredPower("max_power", 2400);
+    const step = this._configuredPower("power_step", 50);
     return {
       min: Math.max(0, min),
       max: max < min ? min : max,
+      // Alleen voor de HTML-slider; nooit gebruiken om toe te passen/af te ronden.
+      step: step > 0 ? step : 50,
     };
   }
 
-  /** Letterlijke sliderwaarde — geen afronding, geen step. */
+  /** Letterlijke waarde doorgeven — niet afronden op power_step. */
   _literalPower(watts) {
     const n = parseInt(String(watts), 10);
     return Number.isFinite(n) ? n : 0;
@@ -538,10 +542,10 @@ class ZendureScheduleCard extends HTMLElement {
 
   _syncPowerLimits() {
     if (!this._els?.powerSlider) return;
-    const { min, max } = this._powerLimits();
+    const { min, max, step } = this._powerLimits();
     this._els.powerSlider.min = String(min);
     this._els.powerSlider.max = String(max);
-    this._els.powerSlider.step = "1";
+    this._els.powerSlider.step = String(step);
   }
 
   _chargePowerEntity() {
@@ -1623,6 +1627,7 @@ class ZendureScheduleEditor extends HTMLElement {
           <div class="row"><label>Standaard vermogen (default_power)</label><input type="number" data-key="default_power" min="0" step="50"></div>
           <div class="row"><label>Max (max_power)</label><input type="number" data-key="max_power" min="0" step="50"></div>
           <div class="row"><label>Min (min_power)</label><input type="number" data-key="min_power" min="0" step="50"></div>
+          <div class="row"><label>Sliderstap (power_step, alleen UI)</label><input type="number" data-key="power_step" min="1" step="1"></div>
           <div class="row"><label>Standaard max SOC laden (%)</label><input type="number" data-key="default_charge_soc" min="0" max="100" step="1"></div>
           <div class="row"><label>Standaard min SOC ontladen (%)</label><input type="number" data-key="default_discharge_soc" min="0" max="100" step="1"></div>
 
@@ -1702,6 +1707,7 @@ class ZendureScheduleEditor extends HTMLElement {
         default_power: 500,
         max_power: 2400,
         min_power: 0,
+        power_step: 50,
         default_charge_soc: 100,
         default_discharge_soc: 10,
       };
@@ -1801,7 +1807,7 @@ class ZendureScheduleEditor extends HTMLElement {
       if (input.value !== String(val)) input.value = val;
     });
 
-    ["default_power", "max_power", "min_power", "default_charge_soc", "default_discharge_soc"].forEach((key) => {
+    ["default_power", "max_power", "min_power", "power_step", "default_charge_soc", "default_discharge_soc"].forEach((key) => {
       const input = this.querySelector(`input[data-key="${key}"]`);
       if (!input || this._isFocused(input)) return;
       const val = this._config[key];
