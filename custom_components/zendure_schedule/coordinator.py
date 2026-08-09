@@ -78,7 +78,10 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.entry = entry
         self._unsub_hourly = None
         self._last_applied_key: str | None = None
+        self._last_mode_key: str | None = None
         self._schedule_entity_id: str | None = None
+        self._planner_entity_id: str | None = None
+        self._disabled_quiet = False
         self._apply_lock = asyncio.Lock()
         self.data = self._fresh_data()
 
@@ -156,6 +159,13 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def set_schedule_entity_id(self, entity_id: str) -> None:
         self._schedule_entity_id = entity_id
 
+    def set_planner_entity_id(self, entity_id: str) -> None:
+        self._planner_entity_id = entity_id
+
+    @property
+    def planner_entity_id(self) -> str | None:
+        return self._planner_entity_id
+
     async def async_setup(self) -> None:
         """Restore schedule and start hourly timer."""
         stored = self.entry.data.get("schedule_raw")
@@ -204,6 +214,8 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if parsed is None:
             _LOGGER.warning("Ongeldig Zendure-schema genegeerd: %s", raw)
             return
+        # Planner-schakelaar is leidend: e= uit card-writes mag hem niet weer aanzetten.
+        parsed["enabled"] = bool(self.data.get("enabled", True))
         self._set_from_parsed(parsed)
         if persist:
             await self._async_persist_raw(self.data["raw"])
@@ -211,8 +223,18 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             await self.async_apply_schedule(force=True)
 
     async def async_set_enabled(self, enabled: bool) -> None:
-        raw = self._serialize(enabled, self.data["hours"])
-        await self.async_set_compact(raw, apply=True, persist=True)
+        """Enable/disable planner. Off → één keer 0 W, daarna geen writes meer."""
+        self._disabled_quiet = False
+        self._last_mode_key = None
+        hours = self.data.get("hours") or normalize_schedule(
+            None,
+            self.default_power,
+            charge_soc=self.default_charge_soc,
+            discharge_soc=self.default_discharge_soc,
+        )
+        self._set_from_parsed({"enabled": bool(enabled), "hours": hours})
+        await self._async_persist_raw(self.data["raw"])
+        await self.async_apply_schedule(force=True)
 
     async def _async_persist_raw(self, raw: str) -> None:
         data = {**self.entry.data, "schedule_raw": raw}
@@ -396,11 +418,7 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return False
 
         active = charge_power if mode == MODE_CHARGE else discharge_power
-        idle = discharge_power if mode == MODE_CHARGE else charge_power
         if not self._values_close(self._number_value(active), power):
-            return False
-        # Niet-actieve limiet moet 0 zijn, anders kan het apparaat weglopen.
-        if idle and not self._values_close(self._number_value(idle), 0):
             return False
 
         soc_entity = (
@@ -416,6 +434,12 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Apply the slot for the current hour to Zendure entities."""
         async with self._apply_lock:
             await self._async_apply_schedule_locked(force=force)
+
+    async def _async_zero_power_limits(
+        self, charge_power: str, discharge_power: str
+    ) -> None:
+        await self._async_set_power(charge_power, 0)
+        await self._async_set_power(discharge_power, 0)
 
     async def _async_apply_schedule_locked(self, *, force: bool = False) -> None:
         hour = dt_util.now().hour
@@ -440,24 +464,43 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
         self.async_set_updated_data(self.data)
 
-        if not enabled:
-            key = f"{hour}:disabled"
-            if not force and self._last_applied_key == key:
-                return
-            self._last_applied_key = key
-            return
-
         operation = str(self._cfg(CONF_OPERATION_ENTITY, ""))
         direction = str(self._cfg(CONF_DIRECTION_ENTITY, ""))
         charge_power = str(self._cfg(CONF_CHARGE_POWER_ENTITY, ""))
         discharge_power = str(self._cfg(CONF_DISCHARGE_POWER_ENTITY, ""))
         charge_soc_entity = str(self._cfg(CONF_CHARGE_SOC_ENTITY, ""))
         discharge_soc_entity = str(self._cfg(CONF_DISCHARGE_SOC_ENTITY, ""))
+
+        if not enabled:
+            # Planner uit: één keer beide limieten op 0, daarna volledig stil.
+            if self._disabled_quiet and not force:
+                return
+            if self._disabled_quiet and force and self._last_applied_key == "disabled":
+                return
+            try:
+                await self._async_zero_power_limits(charge_power, discharge_power)
+                self._disabled_quiet = True
+                self._last_applied_key = "disabled"
+                self._last_mode_key = None
+                _LOGGER.info(
+                    "Zendure Schedule planner uit — vermogen op 0 W, geen verdere writes"
+                )
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception(
+                    "Zendure Schedule kon vermogen niet op 0 zetten bij planner uit"
+                )
+            return
+
+        # Planner weer aan: stilte-modus opheffen.
+        self._disabled_quiet = False
+
         if not operation:
             _LOGGER.error("Geen operation_entity geconfigureerd")
             return
 
         key = f"{hour}:{slot['mode']}:{power}:{soc}"
+        mode_key = f"{hour}:{slot['mode']}"
+        transition = self._last_mode_key != mode_key
         matches_live = self._slot_matches_live(
             mode=slot["mode"],
             power=power,
@@ -471,18 +514,21 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         if not force and self._last_applied_key == key and matches_live:
             return
-        if not force and self._last_applied_key == key and not matches_live:
+        if not matches_live and self._last_applied_key == key:
             _LOGGER.warning(
-                "Zendure Schedule drift gedetecteerd (%s) — herstel naar planning",
+                "Zendure Schedule drift gedetecteerd (%s, live actief=%s) — herstel",
                 key,
+                self._number_value(
+                    charge_power
+                    if slot["mode"] == MODE_CHARGE
+                    else discharge_power
+                ),
             )
 
         try:
             mode = slot["mode"]
             if mode == MODE_OFF:
-                # Leeg/uit: vermogen op 0 zodat er geen rest-laden/ontladen blijft staan.
-                await self._async_set_power(charge_power, 0)
-                await self._async_set_power(discharge_power, 0)
+                await self._async_zero_power_limits(charge_power, discharge_power)
                 off_option = str(self._cfg(CONF_OFF_OPTION, DEFAULT_OFF_OPTION))
                 if off_option:
                     await self._async_select_option(operation, off_option)
@@ -497,8 +543,6 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     str(self._cfg(CONF_NOM_O_OPTION, DEFAULT_NOM_O_OPTION)),
                 )
             elif mode in (MODE_CHARGE, MODE_DISCHARGE):
-                # Laden/ontladen: operation = off + ac_mode + power + SOC.
-                # Zet de niet-actieve limiet op 0 om weglopen naar oude waarden te voorkomen.
                 await self._async_select_option(
                     operation,
                     str(
@@ -522,15 +566,28 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         )
                     ),
                 )
+                # Idle-limiet alleen bij modus/uur-wissel op 0 — niet elke minuut
+                # (voorkomt 0/100/200-flappen met Zendure).
+                if transition:
+                    if mode == MODE_CHARGE:
+                        await self._async_set_power(discharge_power, 0)
+                    else:
+                        await self._async_set_power(charge_power, 0)
                 if mode == MODE_CHARGE:
-                    await self._async_set_power(discharge_power, 0)
                     await self._async_set_power(charge_power, power)
-                    await self._async_set_number(charge_soc_entity, soc)
+                    if transition or not matches_live:
+                        await self._async_set_number(charge_soc_entity, soc)
                 else:
-                    await self._async_set_power(charge_power, 0)
                     await self._async_set_power(discharge_power, power)
-                    await self._async_set_number(discharge_soc_entity, soc)
+                    if transition or not matches_live:
+                        await self._async_set_number(discharge_soc_entity, soc)
+                _LOGGER.info(
+                    "Zendure Schedule toegepast: %s (actief=%s W)",
+                    mode_key,
+                    power,
+                )
             self._last_applied_key = key
+            self._last_mode_key = mode_key
             _LOGGER.debug("Zendure schedule toegepast: %s", key)
         except Exception:  # noqa: BLE001 - surface apply failures in logs
             _LOGGER.exception("Zendure schedule toepassen mislukt")

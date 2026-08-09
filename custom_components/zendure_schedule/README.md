@@ -158,4 +158,6 @@ Lege entity-velden (`""` of weggelaten) betekenen: gebruik de entities uit de **
 
 Toepassen gebeurt bij HA-start, elk heel uur, en bij schema-wijzigingen voor het huidige uur.
 
-Daarnaast controleert de integratie **elke minuut** of het live vermogen/modus nog overeenkomt met de planning. Bij drift (bijv. vermogen dat midden in het uur wijzigt) wordt automatisch hersteld.
+Daarnaast controleert de integratie **elke minuut** of het live vermogen/modus nog overeenkomt met de planning. Bij drift wordt alleen het **actieve** vermogen hersteld.
+
+**Planner uit** (hoofdschakelaar/card-toggle): zet laad- en ontlaadvermogen **één keer** op `0 W` en schrijft daarna **niets meer** naar de batterij-entities tot je de planner weer aanzet. De card kan de planner niet per ongeluk weer aanzetten via schema-writes.

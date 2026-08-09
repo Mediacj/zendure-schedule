@@ -44,6 +44,7 @@ class ZendureScheduleSwitch(SwitchEntity):
         )
 
     async def async_added_to_hass(self) -> None:
+        self.coordinator.set_planner_entity_id(self.entity_id)
         self.coordinator.async_add_listener(self.async_write_ha_state)
 
     @property

@@ -4,7 +4,7 @@
  * Backend applies the hourly plan; entities come from the integration config.
  */
 
-const CARD_VERSION = "1.0.14";
+const CARD_VERSION = "1.0.15";
 const LOGO_URL = `/zendure_schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
 const MODES = ["off", "nom", "nom_o", "charge", "discharge"];
@@ -143,13 +143,12 @@ class ZendureScheduleCard extends HTMLElement {
     try {
       this._hydrateFromIntegration();
       this._pullStorageEntity();
+      this._syncEnabledFromHass();
       this._renderStatus();
       this._highlightCurrentHour();
       this._syncPowerLimits();
       this._syncChrome();
-      if (this._shouldAutoApply()) {
-        this._maybeApplySchedule();
-      }
+      // Alleen backend past toe; card niet meer periodiek pushen.
     } catch (err) {
       console.error("Zendure Schedule Card: refresh failed", err);
     }
@@ -173,6 +172,37 @@ class ZendureScheduleCard extends HTMLElement {
     return this._config.storage_entity || this._discoverStorageEntity() || null;
   }
 
+  _plannerEntityId() {
+    if (this._config.planner_entity) return this._config.planner_entity;
+    const storageId = this._storageEntityId();
+    const fromAttr = this._hass?.states?.[storageId]?.attributes?.planner_entity;
+    if (fromAttr) return fromAttr;
+    if (!this._hass?.states) return null;
+    for (const [entityId, st] of Object.entries(this._hass.states)) {
+      if (
+        entityId.startsWith("switch.") &&
+        st?.attributes?.friendly_name &&
+        String(st.attributes.friendly_name).toLowerCase().includes("planner")
+      ) {
+        return entityId;
+      }
+    }
+    return null;
+  }
+
+  _syncEnabledFromHass() {
+    const planner = this._plannerEntityId();
+    if (planner && this._hass?.states?.[planner]) {
+      this._enabled = this._hass.states[planner].state === "on";
+      return;
+    }
+    const storageId = this._storageEntityId();
+    const raw = this._hass?.states?.[storageId]?.state;
+    if (!raw || raw === "unknown" || raw === "unavailable") return;
+    const parsed = this._parseCompact(raw);
+    if (parsed) this._enabled = !!parsed.enabled;
+  }
+
   /**
    * Vul ontbrekende entity-keys vanuit attributes op de schema-text-entity.
    */
@@ -188,6 +218,7 @@ class ZendureScheduleCard extends HTMLElement {
       "discharge_power_entity",
       "charge_soc_entity",
       "discharge_soc_entity",
+      "planner_entity",
     ].forEach((key) => {
       const attrKey = key === "entity" ? "operation_entity" : key;
       if (!this._config[key] && attrs[attrKey]) {
@@ -343,6 +374,7 @@ class ZendureScheduleCard extends HTMLElement {
 
   /** Compact format: e=1;m=oonxc...;p=0,0,500,...;s=10,100,... */
   _serializeCompact() {
+    this._syncEnabledFromHass();
     const m = this._schedule
       .map((s) => MODE_TO_CHAR[s.mode] || "o")
       .join("");
@@ -644,10 +676,7 @@ class ZendureScheduleCard extends HTMLElement {
     };
 
     this._els.toggleBtn.addEventListener("click", () => {
-      this._enabled = !this._enabled;
-      this._persist();
-      this._syncChrome();
-      this._maybeApplySchedule(true);
+      this._onTogglePlanner();
     });
 
     this._els.brushes.forEach((btn) => {
@@ -716,9 +745,8 @@ class ZendureScheduleCard extends HTMLElement {
     if (!this._tickTimer) {
       this._tickTimer = setInterval(() => {
         this._highlightCurrentHour();
-        if (this._shouldAutoApply()) {
-          this._maybeApplySchedule();
-        }
+        this._syncEnabledFromHass();
+        this._syncChrome();
       }, 15000);
     }
   }
@@ -1007,6 +1035,28 @@ class ZendureScheduleCard extends HTMLElement {
     return this._config.discharge_soc_entity || "";
   }
 
+  async _onTogglePlanner() {
+    const next = !this._enabled;
+    this._enabled = next;
+    this._syncChrome();
+    const planner = this._plannerEntityId();
+    try {
+      if (planner) {
+        await this._hass.callService(
+          "switch",
+          next ? "turn_on" : "turn_off",
+          { entity_id: planner }
+        );
+      } else {
+        // Fallback zonder switch-entity: schrijf e= via schema.
+        this._persist();
+        this._flushStorageWrite();
+      }
+    } catch (err) {
+      console.error("Zendure Schedule Card: planner toggle failed", err);
+    }
+  }
+
   async _onApplyNowClick() {
     if (this._applyBusy) return;
     this._applyBusy = true;
@@ -1155,11 +1205,9 @@ class ZendureScheduleCard extends HTMLElement {
           : this._config.discharge_option || "output"
       );
       if (slot.mode === "charge") {
-        await this._setPower(this._dischargePowerEntity(), 0);
         await this._setPower(this._chargePowerEntity(), slot.power);
         await this._setNumber(this._chargeSocEntity(), soc);
       } else {
-        await this._setPower(this._chargePowerEntity(), 0);
         await this._setPower(this._dischargePowerEntity(), slot.power);
         await this._setNumber(this._dischargeSocEntity(), soc);
       }

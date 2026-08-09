@@ -73,6 +73,7 @@ class ZendureScheduleText(TextEntity):
         data = self._entry.data
         return {
             "zendure_schedule_storage": True,
+            "planner_entity": self.coordinator.planner_entity_id,
             "operation_entity": data.get(CONF_OPERATION_ENTITY),
             "direction_entity": data.get(CONF_DIRECTION_ENTITY),
             "charge_power_entity": data.get(CONF_CHARGE_POWER_ENTITY),
