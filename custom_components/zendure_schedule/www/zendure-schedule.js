@@ -556,7 +556,7 @@ class ZendureScheduleCard extends HTMLElement {
               <div class="stat-value hour-value">—</div>
             </div>
             <div class="status-block">
-              <div class="stat-label">PLAN</div>
+              <div class="stat-label">MODUS STRAKS</div>
               <div class="stat-value plan-value">—</div>
             </div>
           </div>
@@ -606,12 +606,6 @@ class ZendureScheduleCard extends HTMLElement {
             <button type="button" data-action="all-nom">Alles NOM</button>
             <button type="button" data-action="all-off">Alles uit</button>
             <button type="button" class="apply-now-btn" data-action="apply-now">Nu toepassen</button>
-          </div>
-
-          <div class="hint">
-            NOM = <code>smart</code>. NOM-O = <code>smart_discharging</code>.
-            Laden/ontladen = operation <code>off</code> + ac_mode input/output.
-            De Zendure Schedule-integratie past elk uur toe (geen aparte automation nodig).
           </div>
         </div>
       </div>
@@ -881,11 +875,14 @@ class ZendureScheduleCard extends HTMLElement {
       btn.classList.toggle("active", btn.dataset.brush === this._brush);
     });
 
-    const counts = { nom: 0, nom_o: 0, charge: 0, discharge: 0 };
-    this._schedule.forEach((s) => {
-      if (counts[s.mode] !== undefined) counts[s.mode] += 1;
-    });
-    this._els.planValue.textContent = `${counts.nom}N ${counts.nom_o}NO ${counts.charge}L ${counts.discharge}O`;
+    this._renderNextMode();
+  }
+
+  _renderNextMode() {
+    if (!this._els?.planValue || !this._schedule) return;
+    const nextHour = (new Date().getHours() + 1) % 24;
+    const slot = this._schedule[nextHour] || this._defaultSlot();
+    this._els.planValue.textContent = MODE_LABEL[slot.mode] || slot.mode;
   }
 
   _highlightCurrentHour() {
@@ -897,6 +894,7 @@ class ZendureScheduleCard extends HTMLElement {
     if (this._els?.hourValue) {
       this._els.hourValue.textContent = `${String(now).padStart(2, "0")}:00`;
     }
+    this._renderNextMode();
   }
 
   _resolveOption(entityId, wanted) {
@@ -1382,7 +1380,6 @@ class ZendureScheduleCard extends HTMLElement {
         background: rgba(244,67,54,0.18);
         color: #ffebee;
       }
-      .hint { margin-top: 12px; color: #6f93a6; font-size: 11px; line-height: 1.4; }
     `;
   }
 }
