@@ -83,4 +83,8 @@ class ZendureScheduleText(TextEntity):
         }
 
     async def async_set_value(self, value: str) -> None:
-        await self.coordinator.async_set_compact(value, apply=True, persist=True)
+        # Schema opslaan mag; toepassen alleen als planner aan staat.
+        enabled = bool(self.coordinator.data.get("enabled", True))
+        await self.coordinator.async_set_compact(
+            value, apply=enabled, persist=True
+        )

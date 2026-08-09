@@ -4,7 +4,7 @@
  * Backend applies the hourly plan; entities come from the integration config.
  */
 
-const CARD_VERSION = "1.0.16";
+const CARD_VERSION = "1.0.17";
 const LOGO_URL = `/zendure_schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
 const MODES = ["off", "nom", "nom_o", "charge", "discharge"];
@@ -55,7 +55,6 @@ const DEFAULTS = {
   default_power: 500,
   max_power: 2400,
   min_power: 0,
-  power_step: 50,
   title: "ZENDURE PLANNER",
   enabled: true,
   colors: {
@@ -525,30 +524,24 @@ class ZendureScheduleCard extends HTMLElement {
   _powerLimits() {
     const min = this._configuredPower("min_power", 0);
     const max = this._configuredPower("max_power", 2400);
-    const step = this._configuredPower("power_step", 50);
     return {
       min: Math.max(0, min),
       max: max < min ? min : max,
-      step: step > 0 ? step : 50,
     };
   }
 
-  _snapPower(watts) {
-    const { min, max, step } = this._powerLimits();
-    const raw = Number(watts);
-    if (!Number.isFinite(raw)) return min;
-    const snapped = Math.round(raw / step) * step;
-    return Math.min(max, Math.max(min, snapped));
+  /** Letterlijke sliderwaarde — geen afronding, geen step. */
+  _literalPower(watts) {
+    const n = parseInt(String(watts), 10);
+    return Number.isFinite(n) ? n : 0;
   }
 
   _syncPowerLimits() {
     if (!this._els?.powerSlider) return;
-    const { min, max, step } = this._powerLimits();
+    const { min, max } = this._powerLimits();
     this._els.powerSlider.min = String(min);
     this._els.powerSlider.max = String(max);
-    // Stap 1 zodat 350 W exact kan; power_step blijft beschikbaar als voorkeur via snap bij slepen.
     this._els.powerSlider.step = "1";
-    this._powerStepPref = step;
   }
 
   _chargePowerEntity() {
@@ -692,7 +685,7 @@ class ZendureScheduleCard extends HTMLElement {
     this._els.powerSlider.addEventListener("input", () => {
       if (this._selectedHour == null) return;
       // Exacte sliderwaarde (stap 1), geen afronding naar 400 bij 350.
-      const power = this._clampPower(this._els.powerSlider.value);
+      const power = this._literalPower(this._els.powerSlider.value);
       this._schedule[this._selectedHour].power = power;
       this._els.powerSlider.value = String(power);
       this._els.powerValue.textContent = `${power} W`;
@@ -702,7 +695,7 @@ class ZendureScheduleCard extends HTMLElement {
     this._els.powerSlider.addEventListener("change", () => {
       if (this._selectedHour == null) return;
       const now = new Date().getHours();
-      if (this._selectedHour === now) this._maybeApplySchedule(true);
+      if (this._selectedHour === now) this._requestBackendApply();
     });
 
     this._els.socSlider.addEventListener("input", () => {
@@ -720,7 +713,7 @@ class ZendureScheduleCard extends HTMLElement {
     this._els.socSlider.addEventListener("change", () => {
       if (this._selectedHour == null) return;
       const now = new Date().getHours();
-      if (this._selectedHour === now) this._maybeApplySchedule(true);
+      if (this._selectedHour === now) this._requestBackendApply();
     });
 
     card.querySelectorAll("[data-action]").forEach((btn) => {
@@ -760,7 +753,7 @@ class ZendureScheduleCard extends HTMLElement {
     this._renderHours();
     this._syncChrome();
     this._renderEditorPanel();
-    this._maybeApplySchedule(true);
+    this._requestBackendApply();
   }
 
   _renderHours() {
@@ -845,7 +838,7 @@ class ZendureScheduleCard extends HTMLElement {
     this._syncChrome();
     this._renderEditorPanel();
     const now = new Date().getHours();
-    if (hour === now) this._maybeApplySchedule(true);
+    if (hour === now) this._requestBackendApply();
   }
 
   _renderEditorPanel() {
@@ -868,11 +861,8 @@ class ZendureScheduleCard extends HTMLElement {
     this._els.powerWrap.classList.toggle("hidden", !needsPower);
     if (needsPower) {
       this._syncPowerLimits();
-      const { min, max } = this._powerLimits();
-      // Geen afronding op power_step terugschrijven (350 mag niet 400 worden).
-      let power = Math.round(Number(slot.power));
+      let power = this._literalPower(slot.power);
       if (!Number.isFinite(power)) power = this._defaultPower();
-      power = Math.min(max, Math.max(min, power));
       this._els.powerSlider.value = String(power);
       this._els.powerValue.textContent = `${power} W`;
     }
@@ -1018,17 +1008,9 @@ class ZendureScheduleCard extends HTMLElement {
     });
   }
 
-  _clampPower(watts) {
-    const { min, max } = this._powerLimits();
-    const raw = Math.round(Math.abs(Number(watts)));
-    if (!Number.isFinite(raw)) return min;
-    return Math.min(max, Math.max(min, raw));
-  }
-
   async _setPower(entityId, watts) {
     if (!entityId) return;
-    // Exacte waarde; power_step alleen voor handmatige slider.
-    await this._setNumber(entityId, this._clampPower(watts));
+    await this._setNumber(entityId, this._literalPower(watts));
   }
 
   async _setNumber(entityId, value) {
@@ -1071,6 +1053,18 @@ class ZendureScheduleCard extends HTMLElement {
     }
   }
 
+  async _requestBackendApply() {
+    this._syncEnabledFromHass();
+    if (!this._enabled || !this._hass) return;
+    this._persist();
+    this._flushStorageWrite();
+    try {
+      await this._hass.callService("zendure_schedule", "apply_now", {});
+    } catch (err) {
+      console.error("Zendure Schedule Card: backend apply failed", err);
+    }
+  }
+
   async _onApplyNowClick() {
     if (this._applyBusy) return;
     this._applyBusy = true;
@@ -1083,14 +1077,12 @@ class ZendureScheduleCard extends HTMLElement {
 
     let ok = false;
     try {
-      this._persist();
-      this._flushStorageWrite();
-      if (this._storageEntityId()) {
-        await this._hass.callService("zendure_schedule", "apply_now", {});
+      this._syncEnabledFromHass();
+      if (!this._enabled) {
         ok = true;
       } else {
-        const result = await this._maybeApplySchedule(true, true);
-        ok = result?.ok !== false;
+        await this._requestBackendApply();
+        ok = true;
       }
     } catch (err) {
       console.error("Zendure Schedule Card: apply-now failed", err);
@@ -1127,6 +1119,12 @@ class ZendureScheduleCard extends HTMLElement {
    * @param {boolean} withResult  when true, always return a status object
    */
   async _maybeApplySchedule(force = false, withResult = false) {
+    // Integratie: card mag NOOIT zelf entities zetten (voorkomt doorlopen na uitzetten).
+    if (this._storageEntityId()) {
+      if (withResult) return { ok: true, message: "Backend past toe" };
+      if (force) await this._requestBackendApply();
+      return undefined;
+    }
     const fail = (message) => {
       if (withResult) return { ok: false, message };
       return undefined;
@@ -1625,7 +1623,6 @@ class ZendureScheduleEditor extends HTMLElement {
           <div class="row"><label>Standaard vermogen (default_power)</label><input type="number" data-key="default_power" min="0" step="50"></div>
           <div class="row"><label>Max (max_power)</label><input type="number" data-key="max_power" min="0" step="50"></div>
           <div class="row"><label>Min (min_power)</label><input type="number" data-key="min_power" min="0" step="50"></div>
-          <div class="row"><label>Stap (power_step)</label><input type="number" data-key="power_step" min="1" step="1"></div>
           <div class="row"><label>Standaard max SOC laden (%)</label><input type="number" data-key="default_charge_soc" min="0" max="100" step="1"></div>
           <div class="row"><label>Standaard min SOC ontladen (%)</label><input type="number" data-key="default_discharge_soc" min="0" max="100" step="1"></div>
 
@@ -1705,7 +1702,6 @@ class ZendureScheduleEditor extends HTMLElement {
         default_power: 500,
         max_power: 2400,
         min_power: 0,
-        power_step: 50,
         default_charge_soc: 100,
         default_discharge_soc: 10,
       };
@@ -1805,7 +1801,7 @@ class ZendureScheduleEditor extends HTMLElement {
       if (input.value !== String(val)) input.value = val;
     });
 
-    ["default_power", "max_power", "min_power", "power_step", "default_charge_soc", "default_discharge_soc"].forEach((key) => {
+    ["default_power", "max_power", "min_power", "default_charge_soc", "default_discharge_soc"].forEach((key) => {
       const input = this.querySelector(`input[data-key="${key}"]`);
       if (!input || this._isFocused(input)) return;
       const val = this._config[key];

@@ -77,6 +77,8 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 continue
             if entry_id and coordinator.entry.entry_id != entry_id:
                 continue
+            if not coordinator.data.get("enabled"):
+                continue
             await coordinator.async_apply_schedule(force=True)
 
     async def handle_set_schedule(call: ServiceCall) -> None:

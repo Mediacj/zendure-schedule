@@ -32,6 +32,7 @@ from .const import (
     CONF_NOM_OPTION,
     CONF_OFF_OPTION,
     CONF_OPERATION_ENTITY,
+    CONF_PLANNER_ENABLED,
     CONF_POWER_STEP,
     DEFAULT_CHARGE_MODE_OPTION,
     DEFAULT_CHARGE_OPTION,
@@ -178,7 +179,11 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             parsed = self._parse(raw)
             assert parsed is not None
+        # Schakelaar-status uit entry is leidend boven e= in het schema.
+        if CONF_PLANNER_ENABLED in self.entry.data:
+            parsed["enabled"] = bool(self.entry.data[CONF_PLANNER_ENABLED])
         self._set_from_parsed(parsed, notify=False)
+        self._disabled_quiet = False
 
         self._unsub_hourly = async_track_time_change(
             self.hass, self._async_hourly_tick, minute=0, second=5
@@ -219,50 +224,52 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._set_from_parsed(parsed)
         if persist:
             await self._async_persist_raw(self.data["raw"])
-        if apply:
+        # Nooit toepassen als planner uit staat — ook niet via schema-writes.
+        if apply and parsed["enabled"]:
             await self.async_apply_schedule(force=True)
 
     async def async_set_enabled(self, enabled: bool) -> None:
         """Enable/disable planner. Off → één keer 0 W, daarna geen writes meer."""
+        enabled = bool(enabled)
         self._disabled_quiet = False
         self._last_mode_key = None
+        self._last_applied_key = None
         hours = self.data.get("hours") or normalize_schedule(
             None,
             self.default_power,
             charge_soc=self.default_charge_soc,
             discharge_soc=self.default_discharge_soc,
         )
-        self._set_from_parsed({"enabled": bool(enabled), "hours": hours})
+        self._set_from_parsed({"enabled": enabled, "hours": hours})
         await self._async_persist_raw(self.data["raw"])
         await self.async_apply_schedule(force=True)
 
     async def _async_persist_raw(self, raw: str) -> None:
-        data = {**self.entry.data, "schedule_raw": raw}
+        data = {
+            **self.entry.data,
+            "schedule_raw": raw,
+            CONF_PLANNER_ENABLED: bool(self.data.get("enabled", True)),
+        }
         self.hass.config_entries.async_update_entry(self.entry, data=data)
 
-    def clamp_power(self, watts: float | int) -> int:
-        """Clamp to min/max only — never round to power_step (that caused 350→400)."""
+    def literal_power(self, watts: float | int) -> int:
+        """Pass through the planned value literally — no step rounding, no min/max clamp."""
         try:
-            raw = int(round(float(watts)))
+            return int(float(watts))
         except (TypeError, ValueError):
-            return self.min_power
-        return max(self.min_power, min(self.max_power, abs(raw)))
-
-    def snap_power(self, watts: float | int) -> int:
-        """Round to power_step for UI use only."""
-        try:
-            raw = float(watts)
-        except (TypeError, ValueError):
-            return self.min_power
-        step = self.power_step
-        snapped = int(round(raw / step) * step)
-        return max(self.min_power, min(self.max_power, snapped))
+            return 0
 
     @callback
     def _async_hourly_tick(self, _now: datetime) -> None:
+        if not self.data.get("enabled"):
+            return
         self.hass.async_create_task(self.async_apply_schedule(force=True))
 
     async def _async_update_data(self) -> dict[str, Any]:
+        # Planner uit: niets meer doen op de achtergrond.
+        if not self.data.get("enabled"):
+            return self.data
+
         hour = dt_util.now().hour
         slot = self.data["hours"][hour]
         self.data = {
@@ -272,8 +279,6 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "current_soc": int(slot.get("soc", 0)),
             "current_hour": hour,
         }
-        # Elk uur: live controleren of apparaat nog overeenkomt met planning.
-        # Herstel bij drift (bijv. vermogen dat midden in het uur wijzigt).
         await self.async_apply_schedule(force=False)
         return self.data
 
@@ -348,8 +353,7 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_set_power(self, entity_id: str, watts: int) -> None:
         if not entity_id:
             return
-        # Exact gepland vermogen sturen; power_step is alleen voor de slider.
-        await self._async_set_number(entity_id, self.clamp_power(watts))
+        await self._async_set_number(entity_id, self.literal_power(watts))
 
     async def _async_set_number(self, entity_id: str, value: int) -> None:
         if not entity_id:
@@ -455,7 +459,7 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         hour = dt_util.now().hour
         slot = self.data["hours"][hour]
         enabled = bool(self.data["enabled"])
-        power = self.clamp_power(int(slot["power"]))
+        power = self.literal_power(slot["power"])
         soc = clamp_soc(
             slot.get("soc"),
             default_soc_for_mode(

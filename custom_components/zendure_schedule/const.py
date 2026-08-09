@@ -20,9 +20,10 @@ CONF_OFF_OPTION = "off_option"
 CONF_DEFAULT_POWER = "default_power"
 CONF_MAX_POWER = "max_power"
 CONF_MIN_POWER = "min_power"
-CONF_POWER_STEP = "power_step"
+CONF_POWER_STEP = "power_step"  # legacy, unused — slider value is applied literally
 CONF_DEFAULT_CHARGE_SOC = "default_charge_soc"
 CONF_DEFAULT_DISCHARGE_SOC = "default_discharge_soc"
+CONF_PLANNER_ENABLED = "planner_enabled"
 
 DEFAULT_NAME = "Zendure Schedule"
 MANUFACTURER = "Energienerds.nl"

@@ -29,7 +29,6 @@ from .const import (
     CONF_NOM_O_OPTION,
     CONF_NOM_OPTION,
     CONF_OPERATION_ENTITY,
-    CONF_POWER_STEP,
     DEFAULT_CHARGE_MODE_OPTION,
     DEFAULT_CHARGE_OPTION,
     DEFAULT_CHARGE_SOC,
@@ -42,7 +41,6 @@ from .const import (
     DEFAULT_NAME,
     DEFAULT_NOM_O_OPTION,
     DEFAULT_NOM_OPTION,
-    DEFAULT_POWER_STEP,
     DOMAIN,
 )
 
@@ -126,10 +124,6 @@ def _schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
                 CONF_MIN_POWER,
                 default=d.get(CONF_MIN_POWER, DEFAULT_MIN_POWER),
             ): vol.All(vol.Coerce(int), vol.Range(min=0, max=10000)),
-            vol.Optional(
-                CONF_POWER_STEP,
-                default=d.get(CONF_POWER_STEP, DEFAULT_POWER_STEP),
-            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=1000)),
             vol.Optional(
                 CONF_DEFAULT_CHARGE_SOC,
                 default=d.get(CONF_DEFAULT_CHARGE_SOC, DEFAULT_CHARGE_SOC),

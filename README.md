@@ -79,7 +79,6 @@ off_option: ""
 default_power: 500
 max_power: 2400
 min_power: 0
-power_step: 100
 default_charge_soc: 100
 default_discharge_soc: 10
 colors:
@@ -121,7 +120,6 @@ Alle velden zijn ook bewerkbaar in de visuele HA-card-editor (inclusief color pi
 | `default_power` | number | `500` | Standaard W bij nieuwe laad/ontlaad-uren |
 | `max_power` | number | `2400` | Maximum van de vermogensslider |
 | `min_power` | number | `0` | Minimum van de vermogensslider |
-| `power_step` | number | `50` | Alleen UI-voorkeur; gepland vermogen wordt **niet** afgerond (350 blijft 350, wordt geen 400) |
 | `colors.nom` | hex | `#1b8a3a` | Kleur NOM |
 | `colors.nom_o` | hex | `#00e5c0` | Kleur NOM-O |
 | `colors.charge` | hex | `#3fb6ff` | Kleur laden |
@@ -160,4 +158,6 @@ Toepassen gebeurt bij HA-start, elk heel uur, en bij schema-wijzigingen voor het
 
 Daarnaast controleert de integratie **elke minuut** of het live vermogen/modus nog overeenkomt met de planning. Bij drift wordt alleen het **actieve** vermogen hersteld.
 
-**Planner uit** (hoofdschakelaar/card-toggle): zet laad- en ontlaadvermogen **één keer** op `0 W` en schrijft daarna **niets meer** naar de batterij-entities tot je de planner weer aanzet. De card kan de planner niet per ongeluk weer aanzetten via schema-writes.
+**Planner uit** (hoofdschakelaar/card-toggle): zet laad- en ontlaadvermogen **één keer** op `0 W`. Daarna geen minutenchecks, geen uur-ticks en geen card-commands meer naar de batterij tot je de planner weer aanzet.
+
+Vermogen van de slider wordt **letterlijk** doorgegeven (geen power_step, geen afronding).
