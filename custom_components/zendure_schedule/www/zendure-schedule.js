@@ -51,6 +51,7 @@ const DEFAULTS = {
   discharge_option: "output",
   off_option: "",
   storage_entity: "",
+  planner_entity: "",
   default_power: 500,
   max_power: 2400,
   min_power: 0,
