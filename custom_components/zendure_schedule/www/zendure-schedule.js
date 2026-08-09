@@ -4,7 +4,7 @@
  * Backend applies the hourly plan; entities come from the integration config.
  */
 
-const CARD_VERSION = "1.0.15";
+const CARD_VERSION = "1.0.16";
 const LOGO_URL = `/zendure_schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
 const MODES = ["off", "nom", "nom_o", "charge", "discharge"];
@@ -546,7 +546,9 @@ class ZendureScheduleCard extends HTMLElement {
     const { min, max, step } = this._powerLimits();
     this._els.powerSlider.min = String(min);
     this._els.powerSlider.max = String(max);
-    this._els.powerSlider.step = String(step);
+    // Stap 1 zodat 350 W exact kan; power_step blijft beschikbaar als voorkeur via snap bij slepen.
+    this._els.powerSlider.step = "1";
+    this._powerStepPref = step;
   }
 
   _chargePowerEntity() {
@@ -689,10 +691,11 @@ class ZendureScheduleCard extends HTMLElement {
 
     this._els.powerSlider.addEventListener("input", () => {
       if (this._selectedHour == null) return;
-      const power = this._snapPower(this._els.powerSlider.value);
+      // Exacte sliderwaarde (stap 1), geen afronding naar 400 bij 350.
+      const power = this._clampPower(this._els.powerSlider.value);
       this._schedule[this._selectedHour].power = power;
       this._els.powerSlider.value = String(power);
-      this._els.powerValue.textContent = `${Math.round(power)} W`;
+      this._els.powerValue.textContent = `${power} W`;
       this._updateHourButton(this._selectedHour);
       this._persist();
     });
@@ -865,10 +868,13 @@ class ZendureScheduleCard extends HTMLElement {
     this._els.powerWrap.classList.toggle("hidden", !needsPower);
     if (needsPower) {
       this._syncPowerLimits();
-      const power = this._snapPower(slot.power);
-      this._schedule[h].power = power;
+      const { min, max } = this._powerLimits();
+      // Geen afronding op power_step terugschrijven (350 mag niet 400 worden).
+      let power = Math.round(Number(slot.power));
+      if (!Number.isFinite(power)) power = this._defaultPower();
+      power = Math.min(max, Math.max(min, power));
       this._els.powerSlider.value = String(power);
-      this._els.powerValue.textContent = `${Math.round(power)} W`;
+      this._els.powerValue.textContent = `${power} W`;
     }
 
     const showSoc = needsPower && this._showSoc();
@@ -1012,10 +1018,17 @@ class ZendureScheduleCard extends HTMLElement {
     });
   }
 
+  _clampPower(watts) {
+    const { min, max } = this._powerLimits();
+    const raw = Math.round(Math.abs(Number(watts)));
+    if (!Number.isFinite(raw)) return min;
+    return Math.min(max, Math.max(min, raw));
+  }
+
   async _setPower(entityId, watts) {
     if (!entityId) return;
-    const value = this._snapPower(Math.abs(watts));
-    await this._setNumber(entityId, value);
+    // Exacte waarde; power_step alleen voor handmatige slider.
+    await this._setNumber(entityId, this._clampPower(watts));
   }
 
   async _setNumber(entityId, value) {

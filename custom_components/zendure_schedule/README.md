@@ -121,7 +121,7 @@ Alle velden zijn ook bewerkbaar in de visuele HA-card-editor (inclusief color pi
 | `default_power` | number | `500` | Standaard W bij nieuwe laad/ontlaad-uren |
 | `max_power` | number | `2400` | Maximum van de vermogensslider |
 | `min_power` | number | `0` | Minimum van de vermogensslider |
-| `power_step` | number | `50` | Stapgrootte slider (W) |
+| `power_step` | number | `50` | Alleen UI-voorkeur; gepland vermogen wordt **niet** afgerond (350 blijft 350, wordt geen 400) |
 | `colors.nom` | hex | `#1b8a3a` | Kleur NOM |
 | `colors.nom_o` | hex | `#00e5c0` | Kleur NOM-O |
 | `colors.charge` | hex | `#3fb6ff` | Kleur laden |

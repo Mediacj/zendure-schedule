@@ -240,7 +240,16 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         data = {**self.entry.data, "schedule_raw": raw}
         self.hass.config_entries.async_update_entry(self.entry, data=data)
 
+    def clamp_power(self, watts: float | int) -> int:
+        """Clamp to min/max only — never round to power_step (that caused 350→400)."""
+        try:
+            raw = int(round(float(watts)))
+        except (TypeError, ValueError):
+            return self.min_power
+        return max(self.min_power, min(self.max_power, abs(raw)))
+
     def snap_power(self, watts: float | int) -> int:
+        """Round to power_step for UI use only."""
         try:
             raw = float(watts)
         except (TypeError, ValueError):
@@ -339,7 +348,8 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_set_power(self, entity_id: str, watts: int) -> None:
         if not entity_id:
             return
-        await self._async_set_number(entity_id, self.snap_power(abs(watts)))
+        # Exact gepland vermogen sturen; power_step is alleen voor de slider.
+        await self._async_set_number(entity_id, self.clamp_power(watts))
 
     async def _async_set_number(self, entity_id: str, value: int) -> None:
         if not entity_id:
@@ -445,7 +455,7 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         hour = dt_util.now().hour
         slot = self.data["hours"][hour]
         enabled = bool(self.data["enabled"])
-        power = self.snap_power(int(slot["power"]))
+        power = self.clamp_power(int(slot["power"]))
         soc = clamp_soc(
             slot.get("soc"),
             default_soc_for_mode(
@@ -455,15 +465,6 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ),
         )
 
-        self.data = {
-            **self.data,
-            "current_mode": slot["mode"],
-            "current_power": power,
-            "current_soc": soc,
-            "current_hour": hour,
-        }
-        self.async_set_updated_data(self.data)
-
         operation = str(self._cfg(CONF_OPERATION_ENTITY, ""))
         direction = str(self._cfg(CONF_DIRECTION_ENTITY, ""))
         charge_power = str(self._cfg(CONF_CHARGE_POWER_ENTITY, ""))
@@ -472,7 +473,15 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         discharge_soc_entity = str(self._cfg(CONF_DISCHARGE_SOC_ENTITY, ""))
 
         if not enabled:
-            # Planner uit: één keer beide limieten op 0, daarna volledig stil.
+            # Planner uit: sensoren op 0, limieten één keer op 0, daarna stil.
+            self.data = {
+                **self.data,
+                "current_mode": MODE_OFF,
+                "current_power": 0,
+                "current_soc": 0,
+                "current_hour": hour,
+            }
+            self.async_set_updated_data(self.data)
             if self._disabled_quiet and not force:
                 return
             if self._disabled_quiet and force and self._last_applied_key == "disabled":
@@ -493,6 +502,14 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Planner weer aan: stilte-modus opheffen.
         self._disabled_quiet = False
+        self.data = {
+            **self.data,
+            "current_mode": slot["mode"],
+            "current_power": power,
+            "current_soc": soc,
+            "current_hour": hour,
+        }
+        self.async_set_updated_data(self.data)
 
         if not operation:
             _LOGGER.error("Geen operation_entity geconfigureerd")
