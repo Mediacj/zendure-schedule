@@ -1,7 +1,7 @@
 {
   "domain": "zendure_schedule",
   "name": "Zendure Schedule",
-  "version": "1.0.18",
+  "version": "1.0.19",
   "documentation": "https://github.com/Mediacj/zendure-schedule",
   "codeowners": [
     "@Mediacj"

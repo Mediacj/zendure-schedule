@@ -159,6 +159,6 @@ Toepassen gebeurt bij HA-start, elk heel uur, en bij schema-wijzigingen voor het
 
 Daarnaast controleert de integratie **elke minuut** of het live vermogen/modus nog overeenkomt met de planning. Bij drift wordt alleen het **actieve** vermogen hersteld.
 
-**Planner uit** (hoofdschakelaar/card-toggle): zet laad- en ontlaadvermogen **één keer** op `0 W`. Daarna geen minutenchecks, geen uur-ticks en geen card-commands meer naar de batterij tot je de planner weer aanzet.
+**Planner uit** of **huidig uur = Uit**: één keer `0 W`, daarna **geen** minutencheck/herstel meer (oude waarden worden niet teruggezet). Pas weer actief bij planner aan + uur ≠ uit.
 
 `power_step` bepaalt alleen de **sliderstap** in de UI. Bij toepassen gaat de gekozen waarde **letterlijk** door — er wordt niet mee gerekend of afgerond.

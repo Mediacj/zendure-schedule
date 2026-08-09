@@ -4,7 +4,7 @@
  * Backend applies the hourly plan; entities come from the integration config.
  */
 
-const CARD_VERSION = "1.0.18";
+const CARD_VERSION = "1.0.19";
 const LOGO_URL = `/zendure_schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
 const MODES = ["off", "nom", "nom_o", "charge", "discharge"];
@@ -1062,6 +1062,7 @@ class ZendureScheduleCard extends HTMLElement {
     if (!this._enabled || !this._hass) return;
     this._persist();
     this._flushStorageWrite();
+    // Backend past toe (ook eenmalig 0 W bij uur=uit); minutencheck staat daar uit bij uit.
     try {
       await this._hass.callService("zendure_schedule", "apply_now", {});
     } catch (err) {

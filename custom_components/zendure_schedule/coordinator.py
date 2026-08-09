@@ -83,6 +83,7 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._schedule_entity_id: str | None = None
         self._planner_entity_id: str | None = None
         self._disabled_quiet = False
+        self._off_hour_quiet: int | None = None
         self._apply_lock = asyncio.Lock()
         self.data = self._fresh_data()
 
@@ -219,19 +220,28 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if parsed is None:
             _LOGGER.warning("Ongeldig Zendure-schema genegeerd: %s", raw)
             return
-        # Planner-schakelaar is leidend: e= uit card-writes mag hem niet weer aanzetten.
-        parsed["enabled"] = bool(self.data.get("enabled", True))
+        incoming_enabled = bool(parsed.get("enabled", True))
+        # e=1 mag planner niet weer aanzetten; e=0 mag wel uitzetten (card-toggle).
+        if not incoming_enabled:
+            parsed["enabled"] = False
+            self._disabled_quiet = False
+            self._off_hour_quiet = None
+        else:
+            parsed["enabled"] = bool(self.data.get("enabled", True))
         self._set_from_parsed(parsed)
         if persist:
             await self._async_persist_raw(self.data["raw"])
         # Nooit toepassen als planner uit staat — ook niet via schema-writes.
         if apply and parsed["enabled"]:
             await self.async_apply_schedule(force=True)
+        elif apply and not parsed["enabled"]:
+            await self.async_apply_schedule(force=True)
 
     async def async_set_enabled(self, enabled: bool) -> None:
         """Enable/disable planner. Off → één keer 0 W, daarna geen writes meer."""
         enabled = bool(enabled)
         self._disabled_quiet = False
+        self._off_hour_quiet = None
         self._last_mode_key = None
         self._last_applied_key = None
         hours = self.data.get("hours") or normalize_schedule(
@@ -259,15 +269,29 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except (TypeError, ValueError):
             return 0
 
+    def _planner_is_on(self) -> bool:
+        if CONF_PLANNER_ENABLED in self.entry.data:
+            return bool(self.entry.data[CONF_PLANNER_ENABLED])
+        return bool(self.data.get("enabled", True))
+
     @callback
     def _async_hourly_tick(self, _now: datetime) -> None:
-        if not self.data.get("enabled"):
+        if not self._planner_is_on():
+            return
+        hour = dt_util.now().hour
+        slot = self.data["hours"][hour]
+        # Huidig uur = uit: geen automatische apply/herstel.
+        if slot.get("mode") == MODE_OFF:
             return
         self.hass.async_create_task(self.async_apply_schedule(force=True))
 
     async def _async_update_data(self) -> dict[str, Any]:
-        # Planner uit: niets meer doen op de achtergrond.
-        if not self.data.get("enabled"):
+        # Sync enabled vanuit entry (bron van waarheid).
+        if CONF_PLANNER_ENABLED in self.entry.data:
+            self.data["enabled"] = bool(self.entry.data[CONF_PLANNER_ENABLED])
+
+        # Planner uit: geen minutencheck, geen herstel.
+        if not self._planner_is_on():
             return self.data
 
         hour = dt_util.now().hour
@@ -275,10 +299,15 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.data = {
             **self.data,
             "current_mode": slot["mode"],
-            "current_power": int(slot["power"]),
-            "current_soc": int(slot.get("soc", 0)),
+            "current_power": int(slot["power"]) if slot["mode"] != MODE_OFF else 0,
+            "current_soc": int(slot.get("soc", 0)) if slot["mode"] != MODE_OFF else 0,
             "current_hour": hour,
         }
+
+        # Huidig uur = uit: geen drift-check / geen herstel van oude waarden.
+        if slot.get("mode") == MODE_OFF:
+            return self.data
+
         await self.async_apply_schedule(force=False)
         return self.data
 
@@ -387,10 +416,9 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         discharge_soc_entity: str,
     ) -> bool:
         """True when live entities still match the planned slot."""
+        # Uit-uur: geen live-match/herstel — dat veroorzaakte minutelijk terugzetten.
         if mode == MODE_OFF:
-            return self._values_close(
-                self._number_value(charge_power), 0
-            ) and self._values_close(self._number_value(discharge_power), 0)
+            return True
 
         if mode == MODE_NOM:
             wanted = self._resolve_option(
@@ -549,11 +577,27 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             mode = slot["mode"]
             if mode == MODE_OFF:
+                # Eén keer 0 W bij overgang naar uit; daarna geen checks meer dit uur.
+                if (
+                    not force
+                    and self._off_hour_quiet == hour
+                    and self._last_mode_key == mode_key
+                ):
+                    return
                 await self._async_zero_power_limits(charge_power, discharge_power)
                 off_option = str(self._cfg(CONF_OFF_OPTION, DEFAULT_OFF_OPTION))
                 if off_option:
                     await self._async_select_option(operation, off_option)
-            elif mode == MODE_NOM:
+                self._off_hour_quiet = hour
+                self._last_applied_key = key
+                self._last_mode_key = mode_key
+                _LOGGER.info(
+                    "Zendure Schedule uur %s uit — 0 W gezet, geen verdere herstel-checks",
+                    hour,
+                )
+                return
+            self._off_hour_quiet = None
+            if mode == MODE_NOM:
                 await self._async_select_option(
                     operation,
                     str(self._cfg(CONF_NOM_OPTION, DEFAULT_NOM_OPTION)),
