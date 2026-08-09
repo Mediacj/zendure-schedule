@@ -72,41 +72,79 @@ class ZendureScheduleCard extends HTMLElement {
   }
 
   setConfig(config) {
-    this._config = {
-      ...DEFAULTS,
-      ...(config || {}),
-      colors: { ...DEFAULTS.colors, ...((config && config.colors) || {}) },
-    };
-    this._brush = this._brush || "nom";
-    this._selectedHour = this._selectedHour ?? null;
-    this._lastAppliedKey = null;
-    this._schedule = this._normalizeSchedule(
-      this._loadSchedule() ?? this._config.schedule
-    );
-    this._enabled =
-      this._loadEnabled() ??
-      (this._config.enabled !== undefined ? !!this._config.enabled : true);
+    try {
+      this._config = {
+        ...DEFAULTS,
+        ...(config || {}),
+        colors: { ...DEFAULTS.colors, ...((config && config.colors) || {}) },
+      };
+      this._brush = this._brush || "nom";
+      this._selectedHour = this._selectedHour ?? null;
+      this._lastAppliedKey = null;
+      this._schedule = this._normalizeSchedule(
+        this._loadSchedule() ?? this._config.schedule
+      );
+      this._enabled =
+        this._loadEnabled() ??
+        (this._config.enabled !== undefined ? !!this._config.enabled : true);
 
-    if (!this._built) {
-      this._buildDom();
-      this._built = true;
-    } else {
-      this._renderHours();
-      this._syncChrome();
-      this._renderEditorPanel();
+      if (!this._built) {
+        this._buildDom();
+        this._built = true;
+      } else {
+        this._renderHours();
+        this._syncChrome();
+        this._renderEditorPanel();
+      }
+      if (this._hass) this._refreshFromHass();
+    } catch (err) {
+      console.error("Zendure Schedule Card: setConfig failed", err);
     }
   }
 
   set hass(hass) {
     this._hass = hass;
-    if (!this._built || !this._config) return;
-    this._hydrateFromIntegration();
-    this._pullStorageEntity();
-    this._renderStatus();
-    this._highlightCurrentHour();
-    this._syncPowerLimits();
-    if (this._shouldAutoApply()) {
-      this._maybeApplySchedule();
+    if (!this._config) return;
+    if (!this._built) {
+      // Hass kan eerder komen dan setConfig-rebuild; bouw zodra mogelijk.
+      try {
+        this._buildDom();
+        this._built = true;
+      } catch (err) {
+        console.error("Zendure Schedule Card: build failed", err);
+        return;
+      }
+    }
+    this._refreshFromHass();
+  }
+
+  connectedCallback() {
+    if (this._config && !this._built) {
+      try {
+        this._buildDom();
+        this._built = true;
+      } catch (err) {
+        console.error("Zendure Schedule Card: connected build failed", err);
+        return;
+      }
+    }
+    if (this._hass && this._built) this._refreshFromHass();
+  }
+
+  _refreshFromHass() {
+    if (!this._hass || !this._built || !this._config) return;
+    try {
+      this._hydrateFromIntegration();
+      this._pullStorageEntity();
+      this._renderStatus();
+      this._highlightCurrentHour();
+      this._syncPowerLimits();
+      this._syncChrome();
+      if (this._shouldAutoApply()) {
+        this._maybeApplySchedule();
+      }
+    } catch (err) {
+      console.error("Zendure Schedule Card: refresh failed", err);
     }
   }
 
@@ -1214,6 +1252,16 @@ class ZendureScheduleCard extends HTMLElement {
 if (!customElements.get("zendure-schedule")) {
   customElements.define("zendure-schedule", ZendureScheduleCard);
 }
+
+// Als de module laat laadt, forceer Lovelace om onbekende cards opnieuw te tekenen.
+const _zendureRebuild = () => {
+  window.dispatchEvent(
+    new CustomEvent("ll-rebuild", { bubbles: true, composed: true })
+  );
+};
+window.setTimeout(_zendureRebuild, 0);
+window.setTimeout(_zendureRebuild, 200);
+window.setTimeout(_zendureRebuild, 1000);
 
 class ZendureScheduleEditor extends HTMLElement {
   setConfig(config) {
