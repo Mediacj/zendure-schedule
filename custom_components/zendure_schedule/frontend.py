@@ -115,25 +115,48 @@ async def _async_ensure_lovelace_resource(hass: HomeAssistant) -> None:
             _LOGGER.debug("Kon Lovelace resources niet uitlezen", exc_info=True)
             return
 
-        existing = None
+        # Verwijder/update alle resources die naar deze card wijzen,
+        # zodat er geen oude ?v= of dubbele entries blijven hangen.
+        matches = []
         for item in items:
             url = str(item.get("url", ""))
-            if url.split("?", 1)[0] == CARD_URL_PATH:
-                existing = item
-                break
+            path = url.split("?", 1)[0]
+            if (
+                path == CARD_URL_PATH
+                or path.endswith(f"/{CARD_FILENAME}")
+                or CARD_FILENAME in path
+            ):
+                matches.append(item)
 
         try:
-            if existing is None:
+            if not matches:
                 await resources.async_create_item(
                     {"res_type": "module", "url": CARD_URL}
                 )
                 _LOGGER.info("Lovelace resource toegevoegd: %s", CARD_URL)
-            elif existing.get("url") != CARD_URL:
+                return
+
+            primary = matches[0]
+            if primary.get("url") != CARD_URL:
                 await resources.async_update_item(
-                    existing["id"],
+                    primary["id"],
                     {"res_type": "module", "url": CARD_URL},
                 )
                 _LOGGER.info("Lovelace resource bijgewerkt: %s", CARD_URL)
+
+            for dup in matches[1:]:
+                try:
+                    await resources.async_delete_item(dup["id"])
+                    _LOGGER.info(
+                        "Dubbele Lovelace resource verwijderd: %s",
+                        dup.get("url"),
+                    )
+                except Exception:  # noqa: BLE001
+                    _LOGGER.debug(
+                        "Kon dubbele resource niet verwijderen: %s",
+                        dup.get("url"),
+                        exc_info=True,
+                    )
         except Exception:  # noqa: BLE001
             _LOGGER.warning(
                 "Kon Lovelace resource niet registreren; "

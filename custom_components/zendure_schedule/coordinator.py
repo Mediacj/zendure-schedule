@@ -360,6 +360,9 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             mode = slot["mode"]
             if mode == MODE_OFF:
+                # Leeg/uit: vermogen op 0 zodat er geen rest-laden/ontladen blijft staan.
+                await self._async_set_power(charge_power, 0)
+                await self._async_set_power(discharge_power, 0)
                 off_option = str(self._cfg(CONF_OFF_OPTION, DEFAULT_OFF_OPTION))
                 if off_option:
                     await self._async_select_option(operation, off_option)

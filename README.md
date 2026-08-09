@@ -37,14 +37,23 @@ De card wordt automatisch geladen via `/zendure_schedule/zendure-schedule.js`.
 
 ## Dashboard card
 
-Minimaal:
+### Entities in de card-YAML?
+
+Bij normaal gebruik via de integratie hoef je **geen** entities in de card-YAML te zetten.
+
+- **Integratie-config** (bij installeren/opties) is de bron. Daar staan de entities die elk uur door de backend worden aangestuurd.
+- **Card-YAML** is optioneel: alleen als je daar een entity invult, gebruikt de card die waarde. Lege velden worden automatisch uit de integratie gehaald (via de schema-text-entity).
+
+Minimaal is dus genoeg:
 
 ```yaml
 type: custom:zendure-schedule
 title: ZENDURE PLANNER
 ```
 
-Volledig voorbeeld:
+Entities in de YAML zijn alleen nodig als je bewust iets anders wilt dan de integratie-config, of als je de card zonder integratie gebruikt.
+
+Volledig voorbeeld (alle overrides optioneel):
 
 ```yaml
 type: custom:zendure-schedule
@@ -122,7 +131,7 @@ Alle velden zijn ook bewerkbaar in de visuele HA-card-editor (inclusief color pi
 
 \* `auto_apply` is impliciet `false` zodra er een `storage_entity` (of auto-discovered schema-text) is, tenzij je `auto_apply: true` zet.
 
-Lege entity-velden (`""`) betekenen: gebruik de entities die je in de **integratie-configuratie** hebt gekozen.
+Lege entity-velden (`""` of weggelaten) betekenen: gebruik de entities uit de **integratie-configuratie**. Ingevulde YAML-waarden overschrijven die keuze alleen voor de card (client-side); de backend blijft de integratie-entities gebruiken.
 
 ## Entities (integratie)
 

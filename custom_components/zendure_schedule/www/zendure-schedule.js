@@ -4,6 +4,8 @@
  * Backend applies the hourly plan; entities come from the integration config.
  */
 
+const CARD_VERSION = "1.0.13";
+const LOGO_URL = `/zendure_schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
 const MODES = ["off", "nom", "nom_o", "charge", "discharge"];
 const MODE_LABEL = {
@@ -534,7 +536,7 @@ class ZendureScheduleCard extends HTMLElement {
         <div class="screen">
           <div class="header">
             <div class="brand">
-              <ha-icon icon="mdi:calendar-clock"></ha-icon>
+              <img class="brand-logo" src="${LOGO_URL}" alt="Energienerds" width="28" height="28">
               <div class="brand-text">
                 <div class="title"></div>
                 <div class="subtitle">24U · NOM / LADEN / ONTLADEN</div>
@@ -1109,13 +1111,15 @@ class ZendureScheduleCard extends HTMLElement {
 
     try {
       if (slot.mode === "off") {
+        await this._setPower(this._chargePowerEntity(), 0);
+        await this._setPower(this._dischargePowerEntity(), 0);
         if (this._config.off_option) {
           await this._selectOption(this._config.entity, this._config.off_option);
           this._lastAppliedKey = key;
           return ok(`${summary} toegepast`);
         }
         this._lastAppliedKey = key;
-        return ok(`${summary} (geen wijziging)`);
+        return ok(`${summary} toegepast`);
       }
 
       if (slot.mode === "nom") {
@@ -1192,10 +1196,11 @@ class ZendureScheduleCard extends HTMLElement {
         gap: 12px; margin-bottom: 14px;
       }
       .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
-      .brand ha-icon {
-        color: var(--color-charge);
-        filter: drop-shadow(0 0 6px rgba(63,182,255,0.85));
-        --mdc-icon-size: 22px;
+      .brand-logo {
+        width: 28px; height: 28px; border-radius: 50%;
+        object-fit: cover; flex-shrink: 0;
+        box-shadow: 0 0 8px rgba(255,140,0,0.35);
+        background: #000;
       }
       .title {
         color: #eaf6ff; font-size: 15px; font-weight: 600; letter-spacing: 1.2px;
@@ -1388,15 +1393,38 @@ if (!customElements.get("zendure-schedule")) {
   customElements.define("zendure-schedule", ZendureScheduleCard);
 }
 
-// Als de module laat laadt, forceer Lovelace om onbekende cards opnieuw te tekenen.
-const _zendureRebuild = () => {
-  window.dispatchEvent(
-    new CustomEvent("ll-rebuild", { bubbles: true, composed: true })
-  );
-};
-window.setTimeout(_zendureRebuild, 0);
-window.setTimeout(_zendureRebuild, 200);
-window.setTimeout(_zendureRebuild, 1000);
+// Eén gecontroleerde rebuild als de module ná Lovelace laadt (voorkomt leeg dashboard).
+if (!window.__ZENDURE_SCHEDULE_CARD_READY__) {
+  window.__ZENDURE_SCHEDULE_CARD_READY__ = true;
+  const _rebuildErrorCards = () => {
+    const roots = [document];
+    const seen = new Set();
+    while (roots.length) {
+      const root = roots.pop();
+      if (!root || seen.has(root)) continue;
+      seen.add(root);
+      root.querySelectorAll?.("hui-error-card").forEach((el) => {
+        el.dispatchEvent(
+          new CustomEvent("ll-rebuild", { bubbles: true, composed: true })
+        );
+      });
+      root.querySelectorAll?.("*").forEach((el) => {
+        if (el.shadowRoot) roots.push(el.shadowRoot);
+      });
+    }
+  };
+  const _scheduleRebuild = () => {
+    window.setTimeout(_rebuildErrorCards, 0);
+    window.setTimeout(_rebuildErrorCards, 400);
+  };
+  if (customElements.get("hui-masonry-view") || customElements.get("hui-view")) {
+    _scheduleRebuild();
+  } else {
+    customElements.whenDefined("hui-view").then(_scheduleRebuild).catch(() => {
+      _scheduleRebuild();
+    });
+  }
+}
 
 class ZendureScheduleEditor extends HTMLElement {
   setConfig(config) {
