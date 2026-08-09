@@ -4,7 +4,7 @@
  * Backend applies the hourly plan; entities come from the integration config.
  */
 
-const CARD_VERSION = "1.0.13";
+const CARD_VERSION = "1.0.14";
 const LOGO_URL = `/zendure_schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
 const MODES = ["off", "nom", "nom_o", "charge", "discharge"];
@@ -1140,7 +1140,8 @@ class ZendureScheduleCard extends HTMLElement {
         return ok(`${summary} toegepast`);
       }
 
-      // charge / discharge → operation off + richting + juiste power entity
+      // charge / discharge → operation off + ac_mode + power + SOC
+      // Niet-actieve limiet altijd 0, zodat oude waarden niet kunnen weglopen.
       await this._selectOption(
         this._config.entity,
         slot.mode === "charge"
@@ -1153,18 +1154,15 @@ class ZendureScheduleCard extends HTMLElement {
           ? this._config.charge_option || "input"
           : this._config.discharge_option || "output"
       );
-      await this._setPower(
-        slot.mode === "charge"
-          ? this._chargePowerEntity()
-          : this._dischargePowerEntity(),
-        slot.power
-      );
-      await this._setNumber(
-        slot.mode === "charge"
-          ? this._chargeSocEntity()
-          : this._dischargeSocEntity(),
-        soc
-      )
+      if (slot.mode === "charge") {
+        await this._setPower(this._dischargePowerEntity(), 0);
+        await this._setPower(this._chargePowerEntity(), slot.power);
+        await this._setNumber(this._chargeSocEntity(), soc);
+      } else {
+        await this._setPower(this._chargePowerEntity(), 0);
+        await this._setPower(this._dischargePowerEntity(), slot.power);
+        await this._setNumber(this._dischargeSocEntity(), soc);
+      }
       this._lastAppliedKey = key;
       return ok(`${summary} toegepast`);
     } catch (err) {

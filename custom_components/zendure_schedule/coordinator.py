@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Any
@@ -78,6 +79,7 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._unsub_hourly = None
         self._last_applied_key: str | None = None
         self._schedule_entity_id: str | None = None
+        self._apply_lock = asyncio.Lock()
         self.data = self._fresh_data()
 
     def _cfg(self, key: str, default: Any) -> Any:
@@ -239,10 +241,34 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "current_soc": int(slot.get("soc", 0)),
             "current_hour": hour,
         }
-        # Re-apply at the top of the hour even if update_interval also fires.
-        if dt_util.now().minute == 0:
-            await self.async_apply_schedule(force=False)
+        # Elk uur: live controleren of apparaat nog overeenkomt met planning.
+        # Herstel bij drift (bijv. vermogen dat midden in het uur wijzigt).
+        await self.async_apply_schedule(force=False)
         return self.data
+
+    def _number_value(self, entity_id: str) -> float | None:
+        if not entity_id:
+            return None
+        state = self.hass.states.get(entity_id)
+        if state is None:
+            return None
+        try:
+            return float(state.state)
+        except (TypeError, ValueError):
+            return None
+
+    def _select_value(self, entity_id: str) -> str | None:
+        if not entity_id:
+            return None
+        state = self.hass.states.get(entity_id)
+        if state is None:
+            return None
+        return str(state.state)
+
+    def _values_close(self, actual: float | None, wanted: int) -> bool:
+        if actual is None:
+            return False
+        return abs(actual - wanted) < 0.51
 
     def _resolve_option(self, entity_id: str, wanted: str) -> str | None:
         if not wanted:
@@ -311,11 +337,91 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             blocking=True,
         )
 
+    def _slot_matches_live(
+        self,
+        *,
+        mode: str,
+        power: int,
+        soc: int,
+        operation: str,
+        direction: str,
+        charge_power: str,
+        discharge_power: str,
+        charge_soc_entity: str,
+        discharge_soc_entity: str,
+    ) -> bool:
+        """True when live entities still match the planned slot."""
+        if mode == MODE_OFF:
+            return self._values_close(
+                self._number_value(charge_power), 0
+            ) and self._values_close(self._number_value(discharge_power), 0)
+
+        if mode == MODE_NOM:
+            wanted = self._resolve_option(
+                operation, str(self._cfg(CONF_NOM_OPTION, DEFAULT_NOM_OPTION))
+            )
+            return wanted is not None and self._select_value(operation) == wanted
+
+        if mode == MODE_NOM_O:
+            wanted = self._resolve_option(
+                operation,
+                str(self._cfg(CONF_NOM_O_OPTION, DEFAULT_NOM_O_OPTION)),
+            )
+            return wanted is not None and self._select_value(operation) == wanted
+
+        if mode not in (MODE_CHARGE, MODE_DISCHARGE):
+            return True
+
+        op_wanted = self._resolve_option(
+            operation,
+            str(
+                self._cfg(CONF_CHARGE_MODE_OPTION, DEFAULT_CHARGE_MODE_OPTION)
+                if mode == MODE_CHARGE
+                else self._cfg(
+                    CONF_DISCHARGE_MODE_OPTION, DEFAULT_DISCHARGE_MODE_OPTION
+                )
+            ),
+        )
+        dir_wanted = self._resolve_option(
+            direction,
+            str(
+                self._cfg(CONF_CHARGE_OPTION, DEFAULT_CHARGE_OPTION)
+                if mode == MODE_CHARGE
+                else self._cfg(CONF_DISCHARGE_OPTION, DEFAULT_DISCHARGE_OPTION)
+            ),
+        )
+        if op_wanted is None or self._select_value(operation) != op_wanted:
+            return False
+        if dir_wanted is None or self._select_value(direction) != dir_wanted:
+            return False
+
+        active = charge_power if mode == MODE_CHARGE else discharge_power
+        idle = discharge_power if mode == MODE_CHARGE else charge_power
+        if not self._values_close(self._number_value(active), power):
+            return False
+        # Niet-actieve limiet moet 0 zijn, anders kan het apparaat weglopen.
+        if idle and not self._values_close(self._number_value(idle), 0):
+            return False
+
+        soc_entity = (
+            charge_soc_entity if mode == MODE_CHARGE else discharge_soc_entity
+        )
+        if soc_entity and not self._values_close(
+            self._number_value(soc_entity), soc
+        ):
+            return False
+        return True
+
     async def async_apply_schedule(self, *, force: bool = False) -> None:
         """Apply the slot for the current hour to Zendure entities."""
+        async with self._apply_lock:
+            await self._async_apply_schedule_locked(force=force)
+
+    async def _async_apply_schedule_locked(self, *, force: bool = False) -> None:
         hour = dt_util.now().hour
         slot = self.data["hours"][hour]
         enabled = bool(self.data["enabled"])
+        power = self.snap_power(int(slot["power"]))
         soc = clamp_soc(
             slot.get("soc"),
             default_soc_for_mode(
@@ -328,7 +434,7 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.data = {
             **self.data,
             "current_mode": slot["mode"],
-            "current_power": int(slot["power"]),
+            "current_power": power,
             "current_soc": soc,
             "current_hour": hour,
         }
@@ -341,13 +447,7 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._last_applied_key = key
             return
 
-        key = f"{hour}:{slot['mode']}:{int(slot['power'])}:{soc}"
-        if not force and self._last_applied_key == key:
-            return
-
-        operation = str(
-            self._cfg(CONF_OPERATION_ENTITY, "")
-        )
+        operation = str(self._cfg(CONF_OPERATION_ENTITY, ""))
         direction = str(self._cfg(CONF_DIRECTION_ENTITY, ""))
         charge_power = str(self._cfg(CONF_CHARGE_POWER_ENTITY, ""))
         discharge_power = str(self._cfg(CONF_DISCHARGE_POWER_ENTITY, ""))
@@ -356,6 +456,26 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not operation:
             _LOGGER.error("Geen operation_entity geconfigureerd")
             return
+
+        key = f"{hour}:{slot['mode']}:{power}:{soc}"
+        matches_live = self._slot_matches_live(
+            mode=slot["mode"],
+            power=power,
+            soc=soc,
+            operation=operation,
+            direction=direction,
+            charge_power=charge_power,
+            discharge_power=discharge_power,
+            charge_soc_entity=charge_soc_entity,
+            discharge_soc_entity=discharge_soc_entity,
+        )
+        if not force and self._last_applied_key == key and matches_live:
+            return
+        if not force and self._last_applied_key == key and not matches_live:
+            _LOGGER.warning(
+                "Zendure Schedule drift gedetecteerd (%s) — herstel naar planning",
+                key,
+            )
 
         try:
             mode = slot["mode"]
@@ -377,7 +497,8 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     str(self._cfg(CONF_NOM_O_OPTION, DEFAULT_NOM_O_OPTION)),
                 )
             elif mode in (MODE_CHARGE, MODE_DISCHARGE):
-                # Laden/ontladen: operation = off + ac_mode + power + SOC
+                # Laden/ontladen: operation = off + ac_mode + power + SOC.
+                # Zet de niet-actieve limiet op 0 om weglopen naar oude waarden te voorkomen.
                 await self._async_select_option(
                     operation,
                     str(
@@ -401,16 +522,14 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         )
                     ),
                 )
-                await self._async_set_power(
-                    charge_power if mode == MODE_CHARGE else discharge_power,
-                    int(slot["power"]),
-                )
-                await self._async_set_number(
-                    charge_soc_entity
-                    if mode == MODE_CHARGE
-                    else discharge_soc_entity,
-                    soc,
-                )
+                if mode == MODE_CHARGE:
+                    await self._async_set_power(discharge_power, 0)
+                    await self._async_set_power(charge_power, power)
+                    await self._async_set_number(charge_soc_entity, soc)
+                else:
+                    await self._async_set_power(charge_power, 0)
+                    await self._async_set_power(discharge_power, power)
+                    await self._async_set_number(discharge_soc_entity, soc)
             self._last_applied_key = key
             _LOGGER.debug("Zendure schedule toegepast: %s", key)
         except Exception:  # noqa: BLE001 - surface apply failures in logs

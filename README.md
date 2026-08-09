@@ -152,8 +152,10 @@ Lege entity-velden (`""` of weggelaten) betekenen: gebruik de entities uit de **
 
 - **NOM** → operation = `smart` (`nom_option`)
 - **NOM-O** → operation = `smart_discharging` (`nom_o_option`)
-- **Laden** → operation `off` + ac_mode `input` + charge power
-- **Ontladen** → operation `off` + ac_mode `output` + discharge power
-- **Uit** → geen wijziging (tenzij `off_option` gezet)
+- **Laden** → operation `off` + ac_mode `input` + charge power; discharge power = `0`
+- **Ontladen** → operation `off` + ac_mode `output` + discharge power; charge power = `0`
+- **Uit** → charge + discharge power = `0` (plus optioneel `off_option`)
 
 Toepassen gebeurt bij HA-start, elk heel uur, en bij schema-wijzigingen voor het huidige uur.
+
+Daarnaast controleert de integratie **elke minuut** of het live vermogen/modus nog overeenkomt met de planning. Bij drift (bijv. vermogen dat midden in het uur wijzigt) wordt automatisch hersteld.
