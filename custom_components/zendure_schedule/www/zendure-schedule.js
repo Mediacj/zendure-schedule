@@ -4,7 +4,7 @@
  * Backend applies the hourly plan; entities come from the integration config.
  */
 
-const CARD_VERSION = "1.0.22";
+const CARD_VERSION = "1.0.23";
 const LOGO_URL = `/zendure_schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
@@ -579,20 +579,18 @@ class ZendureScheduleCard extends HTMLElement {
         <div class="screen">
           <div class="header">
             <div class="brand">
+              <a class="brand-logo-link" href="${BRAND_URL}" target="_blank" rel="noopener noreferrer" title="Energienerds.nl">
+                <img class="brand-logo" src="${LOGO_URL}" alt="Energienerds" width="28" height="28">
+              </a>
               <div class="brand-text">
                 <div class="title"></div>
                 <div class="subtitle">24U · NOM / LADEN / ONTLADEN</div>
               </div>
             </div>
-            <div class="header-right">
-              <a class="brand-logo-link" href="${BRAND_URL}" target="_blank" rel="noopener noreferrer" title="Energienerds.nl">
-                <img class="brand-logo" src="${LOGO_URL}" alt="Energienerds" width="28" height="28">
-              </a>
-              <button class="toggle-btn" type="button" title="Planner aan/uit">
-                <span class="toggle-dot"></span>
-                <span class="toggle-label">AAN</span>
-              </button>
-            </div>
+            <button class="toggle-btn" type="button" title="Planner aan/uit">
+              <span class="toggle-dot"></span>
+              <span class="toggle-label">AAN</span>
+            </button>
           </div>
 
           <div class="status-row">
@@ -835,8 +833,8 @@ class ZendureScheduleCard extends HTMLElement {
       off: "—",
       nom: "NOM",
       nom_o: this._nomOTag(),
-      charge: "IN",
-      discharge: "UIT",
+      charge: "IMP",
+      discharge: "EXP",
     };
     btn.querySelector(".hour-tag").textContent = tags[slot.mode] || "—";
     const powerEl = btn.querySelector(".hour-power");
@@ -1313,12 +1311,9 @@ class ZendureScheduleCard extends HTMLElement {
         gap: 12px; margin-bottom: 14px;
       }
       .brand { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
-      .header-right {
-        display: flex; align-items: center; gap: 10px; flex-shrink: 0;
-      }
       .brand-logo-link {
         display: inline-flex; line-height: 0; border-radius: 50%;
-        text-decoration: none; cursor: pointer;
+        text-decoration: none; cursor: pointer; flex-shrink: 0;
       }
       .brand-logo-link:hover .brand-logo {
         filter: brightness(1.12);
