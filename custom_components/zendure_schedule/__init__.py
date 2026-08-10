@@ -9,9 +9,10 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
+from homeassistant.util import dt as dt_util
 import voluptuous as vol
 
-from .const import DOMAIN, PLATFORMS
+from .const import DOMAIN, MODE_OFF, PLATFORMS
 from .coordinator import ZendureScheduleCoordinator
 from .frontend import async_register_frontend
 
@@ -49,6 +50,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    # Schema/planner-persist mag geen reload triggeren (race met apply).
+    if hass.data.get(f"{DOMAIN}_skip_reload"):
+        return
     await hass.config_entries.async_reload(entry.entry_id)
 
 
@@ -78,6 +82,11 @@ def _async_register_services(hass: HomeAssistant) -> None:
             if entry_id and coordinator.entry.entry_id != entry_id:
                 continue
             if not coordinator.data.get("enabled"):
+                continue
+            # UIT-uur staat in stand-by: apply_now mag oude mode niet terugzetten.
+            hour = dt_util.now().hour
+            hours = coordinator.data.get("hours") or []
+            if 0 <= hour < len(hours) and hours[hour].get("mode") == MODE_OFF:
                 continue
             await coordinator.async_apply_schedule(force=True)
 

@@ -260,7 +260,13 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "schedule_raw": raw,
             CONF_PLANNER_ENABLED: bool(self.data.get("enabled", True)),
         }
-        self.hass.config_entries.async_update_entry(self.entry, data=data)
+        # Voorkom volledige reload bij elke schema-write (race met apply_now).
+        self.hass.data[f"{DOMAIN}_skip_reload"] = True
+        try:
+            self.hass.config_entries.async_update_entry(self.entry, data=data)
+            await asyncio.sleep(0)
+        finally:
+            self.hass.data[f"{DOMAIN}_skip_reload"] = False
 
     def literal_power(self, watts: float | int) -> int:
         """Pass through the planned value literally — no step rounding, no min/max clamp."""
@@ -278,11 +284,9 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _async_hourly_tick(self, _now: datetime) -> None:
         if not self._planner_is_on():
             return
-        hour = dt_util.now().hour
-        slot = self.data["hours"][hour]
-        # Huidig uur = uit: geen automatische apply/herstel.
-        if slot.get("mode") == MODE_OFF:
-            return
+        # Uurwisseling: één keer toepassen (ook UIT → stand-by).
+        # Minuut-update doet geen herstel meer bij UIT.
+        self._off_hour_quiet = None
         self.hass.async_create_task(self.async_apply_schedule(force=True))
 
     async def _async_update_data(self) -> dict[str, Any]:
@@ -295,6 +299,9 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return self.data
 
         hour = dt_util.now().hour
+        if self._off_hour_quiet is not None and self._off_hour_quiet != hour:
+            self._off_hour_quiet = None
+
         slot = self.data["hours"][hour]
         self.data = {
             **self.data,
@@ -304,8 +311,12 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "current_hour": hour,
         }
 
-        # Huidig uur = uit: geen drift-check / geen herstel van oude waarden.
+        # Huidig uur = uit: stand-by — geen drift-check / geen mode-herstel.
         if slot.get("mode") == MODE_OFF:
+            _LOGGER.debug(
+                "Zendure Schedule uur %s uit — minutencheck overgeslagen (stand-by)",
+                hour,
+            )
             return self.data
 
         await self.async_apply_schedule(force=False)
@@ -487,11 +498,12 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         hour = dt_util.now().hour
         slot = self.data["hours"][hour]
         enabled = bool(self.data["enabled"])
+        mode = slot["mode"]
         power = self.literal_power(slot["power"])
         soc = clamp_soc(
             slot.get("soc"),
             default_soc_for_mode(
-                slot["mode"],
+                mode,
                 charge_soc=self.default_charge_soc,
                 discharge_soc=self.default_discharge_soc,
             ),
@@ -536,9 +548,9 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._disabled_quiet = False
         self.data = {
             **self.data,
-            "current_mode": slot["mode"],
-            "current_power": power,
-            "current_soc": soc,
+            "current_mode": mode,
+            "current_power": power if mode != MODE_OFF else 0,
+            "current_soc": soc if mode != MODE_OFF else 0,
             "current_hour": hour,
         }
         self.async_set_updated_data(self.data)
@@ -547,11 +559,20 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.error("Geen operation_entity geconfigureerd")
             return
 
-        key = f"{hour}:{slot['mode']}:{power}:{soc}"
-        mode_key = f"{hour}:{slot['mode']}"
+        # Stand-by voor UIT-uur: na eerste apply dit uur nooit meer herstellen,
+        # ook niet via apply_now/force (voorkomt terugzetten van oude NOM).
+        if mode == MODE_OFF and self._off_hour_quiet == hour:
+            _LOGGER.debug(
+                "Zendure Schedule uur %s al in stand-by — apply overgeslagen",
+                hour,
+            )
+            return
+
+        key = f"{hour}:{mode}:{power}:{soc}"
+        mode_key = f"{hour}:{mode}"
         transition = self._last_mode_key != mode_key
         matches_live = self._slot_matches_live(
-            mode=slot["mode"],
+            mode=mode,
             power=power,
             soc=soc,
             operation=operation,
@@ -569,21 +590,13 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 key,
                 self._number_value(
                     charge_power
-                    if slot["mode"] == MODE_CHARGE
+                    if mode == MODE_CHARGE
                     else discharge_power
                 ),
             )
 
         try:
-            mode = slot["mode"]
             if mode == MODE_OFF:
-                # Eén keer naar uit: operation=off + beide vermogens 0; daarna stil dit uur.
-                if (
-                    not force
-                    and self._off_hour_quiet == hour
-                    and self._last_mode_key == mode_key
-                ):
-                    return
                 off_option = str(
                     self._cfg(CONF_OFF_OPTION, DEFAULT_OFF_OPTION)
                 ).strip() or DEFAULT_OFF_OPTION
@@ -593,7 +606,7 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._last_applied_key = key
                 self._last_mode_key = mode_key
                 _LOGGER.info(
-                    "Zendure Schedule uur %s uit — operation=%s, 0 W, geen verdere herstel-checks",
+                    "Zendure Schedule uur %s uit — operation=%s, 0 W, stand-by tot volgend uur",
                     hour,
                     off_option,
                 )

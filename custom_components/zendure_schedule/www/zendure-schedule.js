@@ -4,7 +4,7 @@
  * Backend applies the hourly plan; entities come from the integration config.
  */
 
-const CARD_VERSION = "1.0.21";
+const CARD_VERSION = "1.0.22";
 const LOGO_URL = `/zendure_schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
@@ -454,18 +454,18 @@ class ZendureScheduleCard extends HTMLElement {
       clearTimeout(this._storageWriteTimer);
       this._storageWriteTimer = null;
     }
-    this._writeStorageNow();
+    return this._writeStorageNow();
   }
 
   _writeStorageNow() {
     const entityId = this._storageEntityId();
-    if (!entityId || !this._hass) return false;
+    if (!entityId || !this._hass) return Promise.resolve(false);
     if (!this._hass.states[entityId]) {
       console.warn(
         "Zendure Schedule Card: schema-entity niet gevonden:",
         entityId
       );
-      return false;
+      return Promise.resolve(false);
     }
     const value = this._serializeCompact();
     if (value.length > 512) {
@@ -476,15 +476,23 @@ class ZendureScheduleCard extends HTMLElement {
     }
     this._lastStorageRaw = value;
     this._storageSynced = true;
-    this._localEditPending = false;
     // Integratie = text.*; losse helper = input_text.*
     const domain = String(entityId).split(".")[0];
     const serviceDomain = domain === "text" ? "text" : "input_text";
-    this._hass.callService(serviceDomain, "set_value", {
-      entity_id: entityId,
-      value,
-    });
-    return true;
+    return this._hass
+      .callService(serviceDomain, "set_value", {
+        entity_id: entityId,
+        value,
+      })
+      .then(() => {
+        this._localEditPending = false;
+        return true;
+      })
+      .catch((err) => {
+        this._localEditPending = false;
+        console.error("Zendure Schedule Card: schema schrijven mislukt", err);
+        return false;
+      });
   }
 
   _pullStorageEntity() {
@@ -1103,8 +1111,13 @@ class ZendureScheduleCard extends HTMLElement {
     this._syncEnabledFromHass();
     if (!this._enabled || !this._hass) return;
     this._persist();
+    // Schema-write (text.set_value) past al toe met het NIEUWE uurplan.
+    // Geen aparte apply_now daarna: die race herstelde eerder de oude mode.
+    if (this._storageEntityId()) {
+      await this._flushStorageWrite();
+      return;
+    }
     this._flushStorageWrite();
-    // Backend past toe (ook eenmalig 0 W bij uur=uit); minutencheck staat daar uit bij uit.
     try {
       await this._hass.callService("zendure_schedule", "apply_now", {});
     } catch (err) {
