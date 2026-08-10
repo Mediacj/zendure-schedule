@@ -4,8 +4,9 @@
  * Backend applies the hourly plan; entities come from the integration config.
  */
 
-const CARD_VERSION = "1.0.19";
+const CARD_VERSION = "1.0.20";
 const LOGO_URL = `/zendure_schedule/energienerds-logo.png?v=${CARD_VERSION}`;
+const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
 const MODES = ["off", "nom", "nom_o", "charge", "discharge"];
 const MODE_LABEL = {
@@ -44,6 +45,8 @@ const DEFAULTS = {
   default_discharge_soc: 10,
   nom_option: "smart",
   nom_o_option: "smart_discharging",
+  nom_o_label: "NOM-O",
+  nom_o_tag: "N-O",
   // Laden/ontladen: operation = off, richting via ac_mode
   charge_mode_option: "off",
   discharge_mode_option: "off",
@@ -568,16 +571,20 @@ class ZendureScheduleCard extends HTMLElement {
         <div class="screen">
           <div class="header">
             <div class="brand">
-              <img class="brand-logo" src="${LOGO_URL}" alt="Energienerds" width="28" height="28">
               <div class="brand-text">
                 <div class="title"></div>
                 <div class="subtitle">24U · NOM / LADEN / ONTLADEN</div>
               </div>
             </div>
-            <button class="toggle-btn" type="button" title="Planner aan/uit">
-              <span class="toggle-dot"></span>
-              <span class="toggle-label">AAN</span>
-            </button>
+            <div class="header-right">
+              <a class="brand-logo-link" href="${BRAND_URL}" target="_blank" rel="noopener noreferrer" title="Energienerds.nl">
+                <img class="brand-logo" src="${LOGO_URL}" alt="Energienerds" width="28" height="28">
+              </a>
+              <button class="toggle-btn" type="button" title="Planner aan/uit">
+                <span class="toggle-dot"></span>
+                <span class="toggle-label">AAN</span>
+              </button>
+            </div>
           </div>
 
           <div class="status-row">
@@ -630,7 +637,7 @@ class ZendureScheduleCard extends HTMLElement {
 
           <div class="legend">
             <span><i class="swatch nom"></i>NOM</span>
-            <span><i class="swatch nom_o"></i>NOM-O</span>
+            <span><i class="swatch nom_o"></i><span class="legend-nom-o">NOM-O</span></span>
             <span><i class="swatch charge"></i>Laden</span>
             <span><i class="swatch discharge"></i>Ontladen</span>
             <span><i class="swatch current"></i>Nu</span>
@@ -661,6 +668,8 @@ class ZendureScheduleCard extends HTMLElement {
       hours: card.querySelector(".hours"),
       screen: card.querySelector(".screen"),
       brushes: Array.from(card.querySelectorAll(".brush")),
+      brushNomO: card.querySelector('.brush[data-brush="nom_o"]'),
+      legendNomO: card.querySelector(".legend-nom-o"),
       editorPanel: card.querySelector(".editor-panel"),
       editorTitle: card.querySelector(".editor-title"),
       editorMode: card.querySelector(".editor-mode"),
@@ -784,6 +793,23 @@ class ZendureScheduleCard extends HTMLElement {
     this._highlightCurrentHour();
   }
 
+  _nomOLabel() {
+    const label = String(this._config?.nom_o_label ?? DEFAULTS.nom_o_label).trim();
+    return label || DEFAULTS.nom_o_label;
+  }
+
+  _nomOTag() {
+    const tag = String(this._config?.nom_o_tag ?? DEFAULTS.nom_o_tag)
+      .trim()
+      .slice(0, 3);
+    return tag || DEFAULTS.nom_o_tag;
+  }
+
+  _modeLabel(mode) {
+    if (mode === "nom_o") return this._nomOLabel();
+    return MODE_LABEL[mode] || mode;
+  }
+
   _updateHourButton(h) {
     const btn = this._hourButtons?.[h];
     if (!btn) return;
@@ -800,7 +826,7 @@ class ZendureScheduleCard extends HTMLElement {
     const tags = {
       off: "—",
       nom: "NOM",
-      nom_o: "N-O",
+      nom_o: this._nomOTag(),
       charge: "IN",
       discharge: "UIT",
     };
@@ -857,7 +883,7 @@ class ZendureScheduleCard extends HTMLElement {
     this._els.editorTitle.textContent = `Uur ${String(h).padStart(2, "0")}–${String(
       (h + 1) % 24
     ).padStart(2, "0")}`;
-    this._els.editorMode.textContent = MODE_LABEL[slot.mode] || slot.mode;
+    this._els.editorMode.textContent = this._modeLabel(slot.mode);
     this._els.editorMode.dataset.mode = slot.mode;
 
     const needsPower = slot.mode === "charge" || slot.mode === "discharge";
@@ -902,6 +928,11 @@ class ZendureScheduleCard extends HTMLElement {
     this._els.toggleLabel.textContent = this._enabled ? "AAN" : "UIT";
     this._els.screen.classList.toggle("scheduler-off", !this._enabled);
 
+    const nomOLabel = this._nomOLabel();
+    if (this._els.brushNomO) this._els.brushNomO.textContent = nomOLabel;
+    if (this._els.legendNomO) this._els.legendNomO.textContent = nomOLabel;
+    this._hourButtons?.forEach((_, h) => this._updateHourButton(h));
+
     this._els.brushes.forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.brush === this._brush);
     });
@@ -913,7 +944,7 @@ class ZendureScheduleCard extends HTMLElement {
     if (!this._els?.planValue || !this._schedule) return;
     const nextHour = (new Date().getHours() + 1) % 24;
     const slot = this._schedule[nextHour] || this._defaultSlot();
-    this._els.planValue.textContent = MODE_LABEL[slot.mode] || slot.mode;
+    this._els.planValue.textContent = this._modeLabel(slot.mode);
   }
 
   _highlightCurrentHour() {
@@ -959,8 +990,18 @@ class ZendureScheduleCard extends HTMLElement {
 
   _prettyMode(state) {
     const s = String(state || "").toLowerCase();
-    if (s === "smart") return "NOM";
-    if (s === "smart_discharging" || s.includes("smart_discharg")) return "NOM-O";
+    const nomOpt = String(this._config?.nom_option || "smart").toLowerCase();
+    const nomOOpt = String(
+      this._config?.nom_o_option || "smart_discharging"
+    ).toLowerCase();
+    if (s === nomOpt || s === "smart") return "NOM";
+    if (
+      s === nomOOpt ||
+      s === "smart_discharging" ||
+      s.includes("smart_discharg")
+    ) {
+      return this._nomOLabel();
+    }
     if (s === "off") return "Off";
     return state;
   }
@@ -973,6 +1014,7 @@ class ZendureScheduleCard extends HTMLElement {
       return;
     }
     const mode = this._prettyMode(st.state);
+    const nomOLabel = this._nomOLabel();
     const dir = this._hass.states[this._config.direction_entity]?.state;
     const dirLower = String(dir || "").toLowerCase();
     let extra = "";
@@ -996,7 +1038,7 @@ class ZendureScheduleCard extends HTMLElement {
     this._els.modeValue.textContent = `${mode}${extra}`;
     this._els.modeValue.classList.toggle(
       "is-self",
-      mode === "NOM" || mode === "NOM-O"
+      mode === "NOM" || mode === nomOLabel
     );
   }
 
@@ -1111,7 +1153,7 @@ class ZendureScheduleCard extends HTMLElement {
   }
 
   _describeSlot(hour, slot) {
-    const label = MODE_LABEL[slot.mode] || slot.mode;
+    const label = this._modeLabel(slot.mode);
     const hh = String(hour).padStart(2, "0");
     if (slot.mode === "charge" || slot.mode === "discharge") {
       return `Uur ${hh}:00 → ${label} ${Math.round(slot.power || 0)} W`;
@@ -1258,7 +1300,18 @@ class ZendureScheduleCard extends HTMLElement {
         display: flex; align-items: center; justify-content: space-between;
         gap: 12px; margin-bottom: 14px;
       }
-      .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+      .brand { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+      .header-right {
+        display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+      }
+      .brand-logo-link {
+        display: inline-flex; line-height: 0; border-radius: 50%;
+        text-decoration: none; cursor: pointer;
+      }
+      .brand-logo-link:hover .brand-logo {
+        filter: brightness(1.12);
+        box-shadow: 0 0 10px rgba(255,140,0,0.55);
+      }
       .brand-logo {
         width: 28px; height: 28px; border-radius: 50%;
         object-fit: cover; flex-shrink: 0;
@@ -1321,20 +1374,28 @@ class ZendureScheduleCard extends HTMLElement {
         font-size: 11px; letter-spacing: 0.3px;
       }
       .brush[data-brush="nom"].active {
-        color: #eaffef; border-color: rgba(27,138,58,0.85);
-        background: rgba(27,138,58,0.28); box-shadow: 0 0 10px rgba(27,138,58,0.35);
+        color: #eaffef;
+        border-color: color-mix(in srgb, var(--color-nom) 85%, transparent);
+        background: color-mix(in srgb, var(--color-nom) 28%, transparent);
+        box-shadow: 0 0 10px color-mix(in srgb, var(--color-nom) 35%, transparent);
       }
       .brush[data-brush="nom_o"].active {
-        color: #eafffa; border-color: rgba(0,229,192,0.9);
-        background: rgba(0,229,192,0.22); box-shadow: 0 0 12px rgba(0,229,192,0.4);
+        color: #eafffa;
+        border-color: color-mix(in srgb, var(--color-nom-o) 90%, transparent);
+        background: color-mix(in srgb, var(--color-nom-o) 22%, transparent);
+        box-shadow: 0 0 12px color-mix(in srgb, var(--color-nom-o) 40%, transparent);
       }
       .brush[data-brush="charge"].active {
-        color: #eaf6ff; border-color: rgba(63,182,255,0.65);
-        background: rgba(63,182,255,0.2); box-shadow: 0 0 10px rgba(63,182,255,0.25);
+        color: #eaf6ff;
+        border-color: color-mix(in srgb, var(--color-charge) 70%, transparent);
+        background: color-mix(in srgb, var(--color-charge) 20%, transparent);
+        box-shadow: 0 0 10px color-mix(in srgb, var(--color-charge) 25%, transparent);
       }
       .brush[data-brush="discharge"].active {
-        color: #fff3e0; border-color: rgba(255,152,0,0.65);
-        background: rgba(255,152,0,0.2); box-shadow: 0 0 10px rgba(255,152,0,0.25);
+        color: #fff3e0;
+        border-color: color-mix(in srgb, var(--color-discharge) 70%, transparent);
+        background: color-mix(in srgb, var(--color-discharge) 20%, transparent);
+        box-shadow: 0 0 10px color-mix(in srgb, var(--color-discharge) 25%, transparent);
       }
       .brush[data-brush="off"].active {
         color: #d8e6ee; border-color: rgba(255,255,255,0.28);
@@ -1362,23 +1423,38 @@ class ZendureScheduleCard extends HTMLElement {
       .hour-num { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
       .hour-tag { font-size: 9px; letter-spacing: 0.3px; opacity: 0.85; }
       .hour-power { font-size: 9px; opacity: 0.9; }
+      .hour.mode-off {
+        color: var(--color-idle);
+        border-color: color-mix(in srgb, var(--color-idle) 35%, transparent);
+        background: color-mix(in srgb, var(--color-idle) 12%, transparent);
+      }
       .hour.mode-nom {
-        color: #eaffef; border-color: rgba(27,138,58,0.8);
-        background: rgba(27,138,58,0.28); box-shadow: 0 0 8px rgba(27,138,58,0.3);
+        color: #eaffef;
+        border-color: color-mix(in srgb, var(--color-nom) 85%, transparent);
+        background: color-mix(in srgb, var(--color-nom) 42%, transparent);
+        box-shadow: 0 0 8px color-mix(in srgb, var(--color-nom) 35%, transparent);
       }
       .hour.mode-nom_o {
-        color: #eafffa; border-color: rgba(0,229,192,0.9);
-        background: rgba(0,229,192,0.22); box-shadow: 0 0 10px rgba(0,229,192,0.4);
+        color: #eafffa;
+        border-color: color-mix(in srgb, var(--color-nom-o) 90%, transparent);
+        background: color-mix(in srgb, var(--color-nom-o) 42%, transparent);
+        box-shadow: 0 0 10px color-mix(in srgb, var(--color-nom-o) 40%, transparent);
       }
       .hour.mode-charge {
-        color: #eaf6ff; border-color: rgba(63,182,255,0.55);
-        background: rgba(63,182,255,0.18); box-shadow: 0 0 8px rgba(63,182,255,0.22);
+        color: #eaf6ff;
+        border-color: color-mix(in srgb, var(--color-charge) 70%, transparent);
+        background: color-mix(in srgb, var(--color-charge) 42%, transparent);
+        box-shadow: 0 0 8px color-mix(in srgb, var(--color-charge) 30%, transparent);
       }
       .hour.mode-discharge {
-        color: #fff3e0; border-color: rgba(255,152,0,0.55);
-        background: rgba(255,152,0,0.18); box-shadow: 0 0 8px rgba(255,152,0,0.22);
+        color: #fff3e0;
+        border-color: color-mix(in srgb, var(--color-discharge) 70%, transparent);
+        background: color-mix(in srgb, var(--color-discharge) 42%, transparent);
+        box-shadow: 0 0 8px color-mix(in srgb, var(--color-discharge) 30%, transparent);
       }
-      .hour.current { outline: 1px solid rgba(234,246,255,0.85); }
+      .hour.current {
+        outline: 1px solid color-mix(in srgb, var(--color-current) 90%, transparent);
+      }
       .hour.selected { outline: 1px solid rgba(63,182,255,1); }
       .screen.scheduler-off .hour.mode-nom,
       .screen.scheduler-off .hour.mode-nom_o,
@@ -1618,6 +1694,8 @@ class ZendureScheduleEditor extends HTMLElement {
           <div class="section-title">Select-opties</div>
           <div class="row"><label>NOM (nom_option)</label><input type="text" data-key="nom_option" placeholder="smart"></div>
           <div class="row"><label>NOM-O (nom_o_option)</label><input type="text" data-key="nom_o_option" placeholder="smart_discharging"></div>
+          <div class="row"><label>Tekst NOM-O (nom_o_label)</label><input type="text" data-key="nom_o_label" placeholder="NOM-O"></div>
+          <div class="row"><label>Tekst NOM-O-uurtegel (nom_o_tag, max 3)</label><input type="text" data-key="nom_o_tag" maxlength="3" placeholder="N-O"></div>
           <div class="row"><label>Laden operation (charge_mode_option)</label><input type="text" data-key="charge_mode_option" placeholder="off"></div>
           <div class="row"><label>Ontladen operation (discharge_mode_option)</label><input type="text" data-key="discharge_mode_option" placeholder="off"></div>
           <div class="row"><label>Laden ac_mode (charge_option)</label><input type="text" data-key="charge_option" placeholder="input"></div>
@@ -1687,6 +1765,7 @@ class ZendureScheduleEditor extends HTMLElement {
         "title",
         "nom_option",
         "nom_o_option",
+        "nom_o_label",
         "charge_mode_option",
         "discharge_mode_option",
         "charge_option",
@@ -1703,6 +1782,20 @@ class ZendureScheduleEditor extends HTMLElement {
           this._updateConfig({ [key]: input.value.trim() });
         });
       });
+
+      const tagInput = this.querySelector('input[data-key="nom_o_tag"]');
+      if (tagInput) {
+        tagInput.addEventListener("input", () => {
+          const clipped = String(tagInput.value || "").slice(0, 3);
+          if (tagInput.value !== clipped) tagInput.value = clipped;
+          this._updateConfig({ nom_o_tag: clipped });
+        });
+        tagInput.addEventListener("change", () => {
+          const clipped = String(tagInput.value || "").trim().slice(0, 3);
+          tagInput.value = clipped;
+          this._updateConfig({ nom_o_tag: clipped });
+        });
+      }
 
       const numberKeys = {
         default_power: 500,
@@ -1795,6 +1888,8 @@ class ZendureScheduleEditor extends HTMLElement {
       "title",
       "nom_option",
       "nom_o_option",
+      "nom_o_label",
+      "nom_o_tag",
       "charge_mode_option",
       "discharge_mode_option",
       "charge_option",
@@ -1804,7 +1899,8 @@ class ZendureScheduleEditor extends HTMLElement {
     syncText.forEach((key) => {
       const input = this.querySelector(`input[data-key="${key}"]`);
       if (!input || this._isFocused(input)) return;
-      const val = this._config[key] ?? "";
+      let val = this._config[key] ?? "";
+      if (key === "nom_o_tag") val = String(val).slice(0, 3);
       if (input.value !== String(val)) input.value = val;
     });
 
@@ -1851,6 +1947,9 @@ class ZendureScheduleEditor extends HTMLElement {
       delete patch.colors;
     }
     Object.assign(raw, patch);
+    if (raw.nom_o_tag != null) {
+      raw.nom_o_tag = String(raw.nom_o_tag).slice(0, 3);
+    }
     this._raw = raw;
     this._config = {
       ...DEFAULTS,

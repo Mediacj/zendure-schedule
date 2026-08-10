@@ -71,6 +71,8 @@ power_entity: ""
 show_soc: true
 nom_option: smart
 nom_o_option: smart_discharging
+nom_o_label: NOM-O
+nom_o_tag: N-O
 charge_mode_option: "off"
 discharge_mode_option: "off"
 charge_option: input
@@ -112,6 +114,8 @@ Alle velden zijn ook bewerkbaar in de visuele HA-card-editor (inclusief color pi
 | `power_entity` | entity_id | `""` | Legacy fallback als charge/discharge-power niet gezet zijn |
 | `nom_option` | string | `smart` | Option-waarde op `entity` voor NOM |
 | `nom_o_option` | string | `smart_discharging` | Option-waarde voor NOM-O |
+| `nom_o_label` | string | `NOM-O` | Knop-/legendatekst voor NOM-O in de card |
+| `nom_o_tag` | string | `N-O` | Korte tekst op NOM-O-uurtegels (max 3 tekens) |
 | `charge_mode_option` | string | `off` | Operation-waarde bij laden |
 | `discharge_mode_option` | string | `off` | Operation-waarde bij ontladen |
 | `charge_option` | string | `input` | AC-mode waarde bij laden |
