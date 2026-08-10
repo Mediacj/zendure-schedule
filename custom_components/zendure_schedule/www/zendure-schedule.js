@@ -4,7 +4,7 @@
  * Backend applies the hourly plan; entities come from the integration config.
  */
 
-const CARD_VERSION = "1.0.20";
+const CARD_VERSION = "1.0.21";
 const LOGO_URL = `/zendure_schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
@@ -52,7 +52,7 @@ const DEFAULTS = {
   discharge_mode_option: "off",
   charge_option: "input",
   discharge_option: "output",
-  off_option: "",
+  off_option: "off",
   storage_entity: "",
   planner_entity: "",
   default_power: 500,
@@ -1220,13 +1220,12 @@ class ZendureScheduleCard extends HTMLElement {
 
     try {
       if (slot.mode === "off") {
+        await this._selectOption(
+          this._config.entity,
+          this._config.off_option || "off"
+        );
         await this._setPower(this._chargePowerEntity(), 0);
         await this._setPower(this._dischargePowerEntity(), 0);
-        if (this._config.off_option) {
-          await this._selectOption(this._config.entity, this._config.off_option);
-          this._lastAppliedKey = key;
-          return ok(`${summary} toegepast`);
-        }
         this._lastAppliedKey = key;
         return ok(`${summary} toegepast`);
       }
@@ -1700,7 +1699,7 @@ class ZendureScheduleEditor extends HTMLElement {
           <div class="row"><label>Ontladen operation (discharge_mode_option)</label><input type="text" data-key="discharge_mode_option" placeholder="off"></div>
           <div class="row"><label>Laden ac_mode (charge_option)</label><input type="text" data-key="charge_option" placeholder="input"></div>
           <div class="row"><label>Ontladen ac_mode (discharge_option)</label><input type="text" data-key="discharge_option" placeholder="output"></div>
-          <div class="row"><label>Uit-penseel option (off_option)</label><input type="text" data-key="off_option" placeholder="(leeg = niets wijzigen)"></div>
+          <div class="row"><label>Uit-penseel option (off_option)</label><input type="text" data-key="off_option" placeholder="off"></div>
 
           <div class="section-title">Vermogen</div>
           <div class="row"><label>Standaard vermogen (default_power)</label><input type="number" data-key="default_power" min="0" step="50"></div>

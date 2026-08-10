@@ -577,23 +577,25 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             mode = slot["mode"]
             if mode == MODE_OFF:
-                # Eén keer 0 W bij overgang naar uit; daarna geen checks meer dit uur.
+                # Eén keer naar uit: operation=off + beide vermogens 0; daarna stil dit uur.
                 if (
                     not force
                     and self._off_hour_quiet == hour
                     and self._last_mode_key == mode_key
                 ):
                     return
+                off_option = str(
+                    self._cfg(CONF_OFF_OPTION, DEFAULT_OFF_OPTION)
+                ).strip() or DEFAULT_OFF_OPTION
+                await self._async_select_option(operation, off_option)
                 await self._async_zero_power_limits(charge_power, discharge_power)
-                off_option = str(self._cfg(CONF_OFF_OPTION, DEFAULT_OFF_OPTION))
-                if off_option:
-                    await self._async_select_option(operation, off_option)
                 self._off_hour_quiet = hour
                 self._last_applied_key = key
                 self._last_mode_key = mode_key
                 _LOGGER.info(
-                    "Zendure Schedule uur %s uit — 0 W gezet, geen verdere herstel-checks",
+                    "Zendure Schedule uur %s uit — operation=%s, 0 W, geen verdere herstel-checks",
                     hour,
+                    off_option,
                 )
                 return
             self._off_hour_quiet = None

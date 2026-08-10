@@ -77,7 +77,7 @@ charge_mode_option: "off"
 discharge_mode_option: "off"
 charge_option: input
 discharge_option: output
-off_option: ""
+off_option: off
 default_power: 500
 max_power: 2400
 min_power: 0
@@ -120,7 +120,7 @@ Alle velden zijn ook bewerkbaar in de visuele HA-card-editor (inclusief color pi
 | `discharge_mode_option` | string | `off` | Operation-waarde bij ontladen |
 | `charge_option` | string | `input` | AC-mode waarde bij laden |
 | `discharge_option` | string | `output` | AC-mode waarde bij ontladen |
-| `off_option` | string | `""` | Option bij penseel “Uit”; leeg = niets wijzigen |
+| `off_option` | string | `off` | Option op operation-select bij uur “Uit” (altijd gezet; leeg valt terug op `off`) |
 | `default_power` | number | `500` | Standaard W bij nieuwe laad/ontlaad-uren |
 | `max_power` | number | `2400` | Maximum van de vermogensslider |
 | `min_power` | number | `0` | Minimum van de vermogensslider |
@@ -157,7 +157,7 @@ Lege entity-velden (`""` of weggelaten) betekenen: gebruik de entities uit de **
 - **NOM-O** → operation = `smart_discharging` (`nom_o_option`)
 - **Laden** → operation `off` + ac_mode `input` + charge power; discharge power = `0`
 - **Ontladen** → operation `off` + ac_mode `output` + discharge power; charge power = `0`
-- **Uit** → charge + discharge power = `0` (plus optioneel `off_option`)
+- **Uit** → operation = `off` (`off_option`) + charge + discharge power = `0`
 
 Toepassen gebeurt bij HA-start, elk heel uur, en bij schema-wijzigingen voor het huidige uur.
 
