@@ -4,7 +4,7 @@
  * Backend applies the hourly plan; entities come from the integration config.
  */
 
-const CARD_VERSION = "1.0.23";
+const CARD_VERSION = "1.0.24";
 const LOGO_URL = `/zendure_schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
@@ -40,7 +40,7 @@ const DEFAULTS = {
   charge_soc_entity: "",
   discharge_soc_entity: "",
   power_entity: "",
-  show_soc: false,
+  show_soc: true,
   default_charge_soc: 100,
   default_discharge_soc: 10,
   nom_option: "smart",
@@ -980,7 +980,12 @@ class ZendureScheduleCard extends HTMLElement {
 
     const aliases = {
       smart: ["smart", "Smart"],
-      smart_discharging: ["smart_discharging", "smart discharging"],
+      smart_discharging: [
+        "smart_discharging",
+        "smart discharging",
+        "external",
+        "extern",
+      ],
       off: ["off", "Off"],
       input: ["input", "Input", "charge"],
       output: ["output", "Output", "discharge"],
@@ -995,21 +1000,33 @@ class ZendureScheduleCard extends HTMLElement {
   }
 
   _prettyMode(state) {
-    const s = String(state || "").toLowerCase();
-    const nomOpt = String(this._config?.nom_option || "smart").toLowerCase();
+    const raw = String(state || "").trim();
+    const s = raw.toLowerCase().replace(/[\s-]+/g, "_");
+    const nomOpt = String(this._config?.nom_option || "smart")
+      .toLowerCase()
+      .replace(/[\s-]+/g, "_");
     const nomOOpt = String(
       this._config?.nom_o_option || "smart_discharging"
-    ).toLowerCase();
+    )
+      .toLowerCase()
+      .replace(/[\s-]+/g, "_");
+
     if (s === nomOpt || s === "smart") return "NOM";
+
+    // NOM-O: geconfigureerde optie + gangbare Zendure-aliassen (o.a. external/extern)
     if (
       s === nomOOpt ||
       s === "smart_discharging" ||
-      s.includes("smart_discharg")
+      s.includes("smart_discharg") ||
+      s === "external" ||
+      s === "extern" ||
+      s.includes("extern")
     ) {
       return this._nomOLabel();
     }
+
     if (s === "off") return "Off";
-    return state;
+    return raw;
   }
 
   _renderStatus() {
@@ -1460,9 +1477,23 @@ class ZendureScheduleCard extends HTMLElement {
         box-shadow: 0 0 8px color-mix(in srgb, var(--color-discharge) 30%, transparent);
       }
       .hour.current {
-        outline: 1px solid color-mix(in srgb, var(--color-current) 90%, transparent);
+        outline: 3px solid color-mix(in srgb, var(--color-current) 95%, transparent);
+        outline-offset: 1px;
+        box-shadow:
+          0 0 0 1px color-mix(in srgb, var(--color-current) 70%, transparent),
+          0 0 14px color-mix(in srgb, var(--color-current) 45%, transparent);
+        z-index: 1;
       }
-      .hour.selected { outline: 1px solid rgba(63,182,255,1); }
+      .hour.selected {
+        outline: 2px solid rgba(63,182,255,1);
+        outline-offset: 1px;
+      }
+      .hour.current.selected {
+        outline: 3px solid color-mix(in srgb, var(--color-current) 95%, transparent);
+        box-shadow:
+          0 0 0 2px rgba(63,182,255,0.85),
+          0 0 14px color-mix(in srgb, var(--color-current) 45%, transparent);
+      }
       .screen.scheduler-off .hour.mode-nom,
       .screen.scheduler-off .hour.mode-nom_o,
       .screen.scheduler-off .hour.mode-charge,

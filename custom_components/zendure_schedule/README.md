@@ -105,7 +105,7 @@ Alle velden zijn ook bewerkbaar in de visuele HA-card-editor (inclusief color pi
 | `direction_entity` | entity_id | *(uit integratie)* | AC-mode select (`input` / `output`) |
 | `charge_power_entity` | entity_id | *(uit integratie)* | Number-entity voor laadvermogen |
 | `discharge_power_entity` | entity_id | *(uit integratie)* | Number-entity voor ontlaadvermogen |
-| `show_soc` | bool | `false` | SOC weergeven: sliders voor max SOC (laden) / min SOC (ontladen) |
+| `show_soc` | bool | `true` | SOC weergeven: sliders voor max SOC (laden) / min SOC (ontladen) |
 | `charge_soc_entity` | entity_id | *(uit integratie)* | Number-entity max SOC bij laden (bijv. `soc_set`) |
 | `discharge_soc_entity` | entity_id | *(uit integratie)* | Number-entity min SOC bij ontladen (bijv. `min_soc`) |
 | `default_charge_soc` | number | `100` | Standaard max SOC (%) bij nieuwe laaduren |
