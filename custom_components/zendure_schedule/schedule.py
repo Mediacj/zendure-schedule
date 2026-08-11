@@ -1,4 +1,4 @@
-"""Compact schedule helpers: e=1;m=oonxc...;p=0,0,500,...;s=10,100,..."""
+"""Compact schedule helpers: e=1;m=oonxc...;p=0,0,500,...;s=10,100,...;n=10,10,..."""
 
 from __future__ import annotations
 
@@ -11,6 +11,8 @@ from .const import (
     DEFAULT_DISCHARGE_SOC,
     MODE_CHARGE,
     MODE_DISCHARGE,
+    MODE_NOM,
+    MODE_NOM_O,
     MODE_OFF,
     MODE_TO_CHAR,
     MODES,
@@ -26,6 +28,18 @@ def default_soc_for_mode(
     if mode == MODE_CHARGE:
         return int(charge_soc)
     if mode == MODE_DISCHARGE:
+        return int(discharge_soc)
+    if mode in (MODE_NOM, MODE_NOM_O):
+        return int(charge_soc)
+    return 0
+
+
+def default_soc_min_for_mode(
+    mode: str,
+    *,
+    discharge_soc: int = DEFAULT_DISCHARGE_SOC,
+) -> int:
+    if mode in (MODE_NOM, MODE_NOM_O):
         return int(discharge_soc)
     return 0
 
@@ -50,6 +64,9 @@ def default_slot(
         "soc": default_soc_for_mode(
             MODE_OFF, charge_soc=charge_soc, discharge_soc=discharge_soc
         ),
+        "soc_min": default_soc_min_for_mode(
+            MODE_OFF, discharge_soc=discharge_soc
+        ),
     }
 
 
@@ -65,10 +82,13 @@ def normalize_slot(
     )
     if value is True:
         return {
-            "mode": "nom",
+            "mode": MODE_NOM,
             "power": base["power"],
             "soc": default_soc_for_mode(
-                "nom", charge_soc=charge_soc, discharge_soc=discharge_soc
+                MODE_NOM, charge_soc=charge_soc, discharge_soc=discharge_soc
+            ),
+            "soc_min": default_soc_min_for_mode(
+                MODE_NOM, discharge_soc=discharge_soc
             ),
         }
     if value is False or value is None:
@@ -80,6 +100,9 @@ def normalize_slot(
             "soc": default_soc_for_mode(
                 value, charge_soc=charge_soc, discharge_soc=discharge_soc
             ),
+            "soc_min": default_soc_min_for_mode(
+                value, discharge_soc=discharge_soc
+            ),
         }
     if isinstance(value, dict):
         mode = value.get("mode") if value.get("mode") in MODES else MODE_OFF
@@ -90,12 +113,25 @@ def normalize_slot(
         fallback_soc = default_soc_for_mode(
             mode, charge_soc=charge_soc, discharge_soc=discharge_soc
         )
+        fallback_min = default_soc_min_for_mode(
+            mode, discharge_soc=discharge_soc
+        )
         soc = (
             clamp_soc(value.get("soc"), fallback_soc)
             if "soc" in value
             else fallback_soc
         )
-        return {"mode": mode, "power": max(0, power), "soc": soc}
+        soc_min = (
+            clamp_soc(value.get("soc_min"), fallback_min)
+            if "soc_min" in value
+            else fallback_min
+        )
+        return {
+            "mode": mode,
+            "power": max(0, power),
+            "soc": soc,
+            "soc_min": soc_min,
+        }
     return dict(base)
 
 
@@ -137,7 +173,8 @@ def serialize_compact(
     modes = "".join(MODE_TO_CHAR.get(s["mode"], "o") for s in schedule)
     powers = ",".join(str(int(s["power"])) for s in schedule)
     socs = ",".join(str(int(s.get("soc", 0))) for s in schedule)
-    return f"e={1 if enabled else 0};m={modes};p={powers};s={socs}"
+    mins = ",".join(str(int(s.get("soc_min", 0))) for s in schedule)
+    return f"e={1 if enabled else 0};m={modes};p={powers};s={socs};n={mins}"
 
 
 def parse_compact(
@@ -183,6 +220,7 @@ def parse_compact(
 
     power_parts = parts.get("p", "").split(",") if parts.get("p") else []
     soc_parts = parts.get("s", "").split(",") if parts.get("s") else []
+    min_parts = parts.get("n", "").split(",") if parts.get("n") else []
     hours: list[dict[str, Any]] = []
     for i in range(24):
         mode = CHAR_TO_MODE.get(modes[i], MODE_OFF)
@@ -193,15 +231,23 @@ def parse_compact(
         fallback_soc = default_soc_for_mode(
             mode, charge_soc=charge_soc, discharge_soc=discharge_soc
         )
+        fallback_min = default_soc_min_for_mode(
+            mode, discharge_soc=discharge_soc
+        )
         if i < len(soc_parts) and soc_parts[i] != "":
             soc = clamp_soc(soc_parts[i], fallback_soc)
         else:
             soc = fallback_soc
+        if i < len(min_parts) and min_parts[i] != "":
+            soc_min = clamp_soc(min_parts[i], fallback_min)
+        else:
+            soc_min = fallback_min
         hours.append(
             {
                 "mode": mode,
                 "power": max(0, power),
                 "soc": soc,
+                "soc_min": soc_min,
             }
         )
     return {

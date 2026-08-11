@@ -4,7 +4,7 @@
  * Backend applies the hourly plan; entities come from the integration config.
  */
 
-const CARD_VERSION = "1.0.24";
+const CARD_VERSION = "1.0.25";
 const LOGO_URL = `/zendure_schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
@@ -281,8 +281,15 @@ class ZendureScheduleCard extends HTMLElement {
   }
 
   _defaultSocForMode(mode) {
-    if (mode === "charge") return this._defaultChargeSoc();
+    if (mode === "charge" || mode === "nom" || mode === "nom_o") {
+      return this._defaultChargeSoc();
+    }
     if (mode === "discharge") return this._defaultDischargeSoc();
+    return 0;
+  }
+
+  _defaultSocMinForMode(mode) {
+    if (mode === "nom" || mode === "nom_o") return this._defaultDischargeSoc();
     return 0;
   }
 
@@ -301,13 +308,19 @@ class ZendureScheduleCard extends HTMLElement {
       mode: "off",
       power: this._defaultPower(),
       soc: this._defaultSocForMode("off"),
+      soc_min: this._defaultSocMinForMode("off"),
     };
   }
 
   _normalizeSlot(value) {
     const base = this._defaultSlot();
     if (value === true) {
-      return { mode: "nom", power: base.power, soc: this._defaultSocForMode("nom") };
+      return {
+        mode: "nom",
+        power: base.power,
+        soc: this._defaultSocForMode("nom"),
+        soc_min: this._defaultSocMinForMode("nom"),
+      };
     }
     if (value === false || value == null) return { ...base };
     if (typeof value === "string" && MODES.includes(value)) {
@@ -315,12 +328,14 @@ class ZendureScheduleCard extends HTMLElement {
         mode: value,
         power: base.power,
         soc: this._defaultSocForMode(value),
+        soc_min: this._defaultSocMinForMode(value),
       };
     }
     if (typeof value === "object") {
       const mode = MODES.includes(value.mode) ? value.mode : "off";
       const power = Number(value.power);
       const fallbackSoc = this._defaultSocForMode(mode);
+      const fallbackMin = this._defaultSocMinForMode(mode);
       return {
         mode,
         power: Number.isFinite(power) && power >= 0 ? power : base.power,
@@ -328,6 +343,10 @@ class ZendureScheduleCard extends HTMLElement {
           value.soc === undefined || value.soc === null
             ? fallbackSoc
             : this._clampSoc(value.soc, fallbackSoc),
+        soc_min:
+          value.soc_min === undefined || value.soc_min === null
+            ? fallbackMin
+            : this._clampSoc(value.soc_min, fallbackMin),
       };
     }
     return { ...base };
@@ -376,7 +395,7 @@ class ZendureScheduleCard extends HTMLElement {
     this._queueStorageWrite();
   }
 
-  /** Compact format: e=1;m=oonxc...;p=0,0,500,...;s=10,100,... */
+  /** Compact format: e=1;m=oonxc...;p=0,0,500,...;s=0,100,...;n=0,10,... */
   _serializeCompact() {
     this._syncEnabledFromHass();
     const m = this._schedule
@@ -388,7 +407,12 @@ class ZendureScheduleCard extends HTMLElement {
         this._clampSoc(slot.soc, this._defaultSocForMode(slot.mode))
       )
       .join(",");
-    return `e=${this._enabled ? 1 : 0};m=${m};p=${p};s=${s}`;
+    const n = this._schedule
+      .map((slot) =>
+        this._clampSoc(slot.soc_min, this._defaultSocMinForMode(slot.mode))
+      )
+      .join(",");
+    return `e=${this._enabled ? 1 : 0};m=${m};p=${p};s=${s};n=${n}`;
   }
 
   _parseCompact(raw) {
@@ -419,10 +443,14 @@ class ZendureScheduleCard extends HTMLElement {
     const socs = (parts.s || "")
       .split(",")
       .map((n) => parseInt(n, 10));
+    const mins = (parts.n || "")
+      .split(",")
+      .map((n) => parseInt(n, 10));
     const hours = [];
     for (let i = 0; i < 24; i++) {
       const mode = CHAR_TO_MODE[parts.m[i]] || "off";
       const fallbackSoc = this._defaultSocForMode(mode);
+      const fallbackMin = this._defaultSocMinForMode(mode);
       hours.push({
         mode,
         power:
@@ -432,6 +460,9 @@ class ZendureScheduleCard extends HTMLElement {
         soc: Number.isFinite(socs[i])
           ? this._clampSoc(socs[i], fallbackSoc)
           : fallbackSoc,
+        soc_min: Number.isFinite(mins[i])
+          ? this._clampSoc(mins[i], fallbackMin)
+          : fallbackMin,
       });
     }
     return {
@@ -468,7 +499,7 @@ class ZendureScheduleCard extends HTMLElement {
       return Promise.resolve(false);
     }
     const value = this._serializeCompact();
-    if (value.length > 512) {
+    if (value.length > 768) {
       console.error(
         "Zendure Schedule Card: schema langer dan verwacht:",
         value.length
@@ -631,12 +662,19 @@ class ZendureScheduleCard extends HTMLElement {
                 </div>
                 <input class="power-slider" type="range" min="0" max="2400" step="50" value="500">
               </div>
-              <div class="soc-wrap hidden">
+              <div class="soc-max-wrap hidden">
                 <div class="power-labels">
-                  <span class="soc-label">SOC</span>
-                  <span class="soc-value">100 %</span>
+                  <span class="soc-max-label">Max SOC</span>
+                  <span class="soc-max-value">100 %</span>
                 </div>
-                <input class="soc-slider" type="range" min="0" max="100" step="1" value="100">
+                <input class="soc-max-slider" type="range" min="0" max="100" step="1" value="100">
+              </div>
+              <div class="soc-min-wrap hidden">
+                <div class="power-labels">
+                  <span class="soc-min-label">Min SOC</span>
+                  <span class="soc-min-value">10 %</span>
+                </div>
+                <input class="soc-min-slider" type="range" min="0" max="100" step="1" value="10">
               </div>
             </div>
           </div>
@@ -683,10 +721,14 @@ class ZendureScheduleCard extends HTMLElement {
       powerSlider: card.querySelector(".power-slider"),
       powerValue: card.querySelector(".power-value"),
       limitsWrap: card.querySelector(".limits-wrap"),
-      socWrap: card.querySelector(".soc-wrap"),
-      socSlider: card.querySelector(".soc-slider"),
-      socLabel: card.querySelector(".soc-label"),
-      socValue: card.querySelector(".soc-value"),
+      socMaxWrap: card.querySelector(".soc-max-wrap"),
+      socMaxSlider: card.querySelector(".soc-max-slider"),
+      socMaxLabel: card.querySelector(".soc-max-label"),
+      socMaxValue: card.querySelector(".soc-max-value"),
+      socMinWrap: card.querySelector(".soc-min-wrap"),
+      socMinSlider: card.querySelector(".soc-min-slider"),
+      socMinLabel: card.querySelector(".soc-min-label"),
+      socMinValue: card.querySelector(".soc-min-value"),
       applyBtn: card.querySelector(".apply-now-btn"),
     };
 
@@ -717,19 +759,44 @@ class ZendureScheduleCard extends HTMLElement {
       if (this._selectedHour === now) this._requestBackendApply();
     });
 
-    this._els.socSlider.addEventListener("input", () => {
+    this._els.socMaxSlider.addEventListener("input", () => {
       if (this._selectedHour == null) return;
       const mode = this._schedule[this._selectedHour].mode;
       const soc = this._clampSoc(
-        this._els.socSlider.value,
+        this._els.socMaxSlider.value,
         this._defaultSocForMode(mode)
       );
       this._schedule[this._selectedHour].soc = soc;
-      this._els.socSlider.value = String(soc);
-      this._els.socValue.textContent = `${soc} %`;
+      this._els.socMaxSlider.value = String(soc);
+      this._els.socMaxValue.textContent = `${soc} %`;
       this._persist();
     });
-    this._els.socSlider.addEventListener("change", () => {
+    this._els.socMaxSlider.addEventListener("change", () => {
+      if (this._selectedHour == null) return;
+      const now = new Date().getHours();
+      if (this._selectedHour === now) this._requestBackendApply();
+    });
+
+    this._els.socMinSlider.addEventListener("input", () => {
+      if (this._selectedHour == null) return;
+      const mode = this._schedule[this._selectedHour].mode;
+      const isDischarge = mode === "discharge";
+      const soc = this._clampSoc(
+        this._els.socMinSlider.value,
+        isDischarge
+          ? this._defaultSocForMode(mode)
+          : this._defaultSocMinForMode(mode)
+      );
+      if (isDischarge) {
+        this._schedule[this._selectedHour].soc = soc;
+      } else {
+        this._schedule[this._selectedHour].soc_min = soc;
+      }
+      this._els.socMinSlider.value = String(soc);
+      this._els.socMinValue.textContent = `${soc} %`;
+      this._persist();
+    });
+    this._els.socMinSlider.addEventListener("change", () => {
       if (this._selectedHour == null) return;
       const now = new Date().getHours();
       if (this._selectedHour === now) this._requestBackendApply();
@@ -861,11 +928,16 @@ class ZendureScheduleCard extends HTMLElement {
           : this._defaultPower();
     const sameFamily =
       (prev.mode === "charge" && mode === "charge") ||
-      (prev.mode === "discharge" && mode === "discharge");
+      (prev.mode === "discharge" && mode === "discharge") ||
+      (prev.mode === "nom" && mode === "nom") ||
+      (prev.mode === "nom_o" && mode === "nom_o");
     const soc = sameFamily
       ? this._clampSoc(prev.soc, this._defaultSocForMode(mode))
       : this._defaultSocForMode(mode);
-    this._schedule[hour] = { mode, power: keepPower, soc };
+    const socMin = sameFamily
+      ? this._clampSoc(prev.soc_min, this._defaultSocMinForMode(mode))
+      : this._defaultSocMinForMode(mode);
+    this._schedule[hour] = { mode, power: keepPower, soc, soc_min: socMin };
     if (select) {
       this._selectedHour = hour;
     }
@@ -893,7 +965,12 @@ class ZendureScheduleCard extends HTMLElement {
     this._els.editorMode.dataset.mode = slot.mode;
 
     const needsPower = slot.mode === "charge" || slot.mode === "discharge";
-    this._els.limitsWrap?.classList.toggle("hidden", !needsPower);
+    const isNom = slot.mode === "nom";
+    const showSoc = this._showSoc() && (needsPower || isNom);
+    const showMaxSoc = showSoc && (slot.mode === "charge" || isNom);
+    const showMinSoc = showSoc && (slot.mode === "discharge" || isNom);
+
+    this._els.limitsWrap?.classList.toggle("hidden", !needsPower && !showSoc);
     this._els.powerWrap.classList.toggle("hidden", !needsPower);
     if (needsPower) {
       this._syncPowerLimits();
@@ -903,20 +980,41 @@ class ZendureScheduleCard extends HTMLElement {
       this._els.powerValue.textContent = `${power} W`;
     }
 
-    const showSoc = needsPower && this._showSoc();
-    this._els.socWrap?.classList.toggle("hidden", !showSoc);
-    if (showSoc) {
+    this._els.socMaxWrap?.classList.toggle("hidden", !showMaxSoc);
+    this._els.socMinWrap?.classList.toggle("hidden", !showMinSoc);
+
+    if (showMaxSoc) {
       const fallback = this._defaultSocForMode(slot.mode);
       const soc = this._clampSoc(slot.soc, fallback);
       this._schedule[h].soc = soc;
-      this._els.socSlider.value = String(soc);
-      this._els.socValue.textContent = `${soc} %`;
-      this._els.socLabel.textContent =
-        slot.mode === "discharge" ? "Min SOC" : "Max SOC";
-      this._els.socSlider.style.accentColor =
+      this._els.socMaxSlider.value = String(soc);
+      this._els.socMaxValue.textContent = `${soc} %`;
+      this._els.socMaxLabel.textContent = "Max SOC";
+      this._els.socMaxSlider.style.accentColor = isNom
+        ? "var(--color-nom)"
+        : "var(--color-charge)";
+    }
+
+    if (showMinSoc) {
+      const fallback =
         slot.mode === "discharge"
-          ? "var(--color-discharge)"
-          : "var(--color-charge)";
+          ? this._defaultSocForMode(slot.mode)
+          : this._defaultSocMinForMode(slot.mode);
+      const soc =
+        slot.mode === "discharge"
+          ? this._clampSoc(slot.soc, fallback)
+          : this._clampSoc(slot.soc_min, fallback);
+      if (slot.mode === "discharge") {
+        this._schedule[h].soc = soc;
+      } else {
+        this._schedule[h].soc_min = soc;
+      }
+      this._els.socMinSlider.value = String(soc);
+      this._els.socMinValue.textContent = `${soc} %`;
+      this._els.socMinLabel.textContent = "Min SOC";
+      this._els.socMinSlider.style.accentColor = isNom
+        ? "var(--color-nom)"
+        : "var(--color-discharge)";
     }
   }
 
@@ -1263,6 +1361,16 @@ class ZendureScheduleCard extends HTMLElement {
           this._config.entity,
           this._config.nom_option || "smart"
         );
+        const maxSoc = this._clampSoc(
+          slot.soc,
+          this._defaultSocForMode("nom")
+        );
+        const minSoc = this._clampSoc(
+          slot.soc_min,
+          this._defaultSocMinForMode("nom")
+        );
+        await this._setNumber(this._chargeSocEntity(), maxSoc);
+        await this._setNumber(this._dischargeSocEntity(), minSoc);
         this._lastAppliedKey = key;
         return ok(`${summary} toegepast`);
       }
@@ -1505,7 +1613,7 @@ class ZendureScheduleCard extends HTMLElement {
         border-radius: 10px; background: rgba(255,255,255,0.04);
         border: 1px solid rgba(63,182,255,0.18);
       }
-      .editor-panel.hidden, .power-wrap.hidden, .soc-wrap.hidden, .limits-wrap.hidden, .hidden { display: none; }
+      .editor-panel.hidden, .power-wrap.hidden, .soc-max-wrap.hidden, .soc-min-wrap.hidden, .limits-wrap.hidden, .hidden { display: none; }
       .editor-head {
         display: flex; justify-content: space-between; align-items: center;
         margin-bottom: 8px; color: #d8e6ee; font-size: 12px;
@@ -1518,13 +1626,13 @@ class ZendureScheduleCard extends HTMLElement {
         display: flex; flex-direction: column; gap: 12px;
         width: 100%;
       }
-      .power-wrap, .soc-wrap { width: 100%; }
+      .power-wrap, .soc-max-wrap, .soc-min-wrap { width: 100%; }
       .power-labels {
         display: flex; justify-content: space-between;
         color: #9fc4d6; font-size: 12px; margin-bottom: 6px;
       }
-      .power-value, .soc-value { color: #eaf6ff; font-variant-numeric: tabular-nums; }
-      .power-slider, .soc-slider {
+      .power-value, .soc-max-value, .soc-min-value { color: #eaf6ff; font-variant-numeric: tabular-nums; }
+      .power-slider, .soc-max-slider, .soc-min-slider {
         width: 100%; accent-color: var(--color-charge); cursor: pointer;
       }
       .legend {

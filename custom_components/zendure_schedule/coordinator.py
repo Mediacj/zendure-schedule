@@ -419,6 +419,7 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         mode: str,
         power: int,
         soc: int,
+        soc_min: int,
         operation: str,
         direction: str,
         charge_power: str,
@@ -435,7 +436,17 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             wanted = self._resolve_option(
                 operation, str(self._cfg(CONF_NOM_OPTION, DEFAULT_NOM_OPTION))
             )
-            return wanted is not None and self._select_value(operation) == wanted
+            if wanted is None or self._select_value(operation) != wanted:
+                return False
+            if charge_soc_entity and not self._values_close(
+                self._number_value(charge_soc_entity), soc
+            ):
+                return False
+            if discharge_soc_entity and not self._values_close(
+                self._number_value(discharge_soc_entity), soc_min
+            ):
+                return False
+            return True
 
         if mode == MODE_NOM_O:
             wanted = self._resolve_option(
@@ -508,6 +519,10 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 discharge_soc=self.default_discharge_soc,
             ),
         )
+        soc_min = clamp_soc(
+            slot.get("soc_min"),
+            self.default_discharge_soc if mode == MODE_NOM else 0,
+        )
 
         operation = str(self._cfg(CONF_OPERATION_ENTITY, ""))
         direction = str(self._cfg(CONF_DIRECTION_ENTITY, ""))
@@ -568,13 +583,14 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             return
 
-        key = f"{hour}:{mode}:{power}:{soc}"
+        key = f"{hour}:{mode}:{power}:{soc}:{soc_min}"
         mode_key = f"{hour}:{mode}"
         transition = self._last_mode_key != mode_key
         matches_live = self._slot_matches_live(
             mode=mode,
             power=power,
             soc=soc,
+            soc_min=soc_min,
             operation=operation,
             direction=direction,
             charge_power=charge_power,
@@ -616,6 +632,17 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 await self._async_select_option(
                     operation,
                     str(self._cfg(CONF_NOM_OPTION, DEFAULT_NOM_OPTION)),
+                )
+                max_soc = soc
+                min_soc = soc_min
+                if transition or not matches_live:
+                    await self._async_set_number(charge_soc_entity, max_soc)
+                    await self._async_set_number(discharge_soc_entity, min_soc)
+                _LOGGER.info(
+                    "Zendure Schedule toegepast: %s (max SOC=%s, min SOC=%s)",
+                    mode_key,
+                    max_soc,
+                    min_soc,
                 )
             elif mode == MODE_NOM_O:
                 await self._async_select_option(
