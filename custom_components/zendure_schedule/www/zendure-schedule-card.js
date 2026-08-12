@@ -3,7 +3,7 @@
  * Do not register this file as a Lovelace resource; use the stub instead.
  */
 
-const CARD_VERSION = "1.0.34";
+const CARD_VERSION = "1.0.35";
 const LOGO_URL = `/local/zendure-schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
@@ -117,8 +117,9 @@ class ZendureScheduleCard extends HTMLElement {
         ...(config || {}),
         colors: { ...DEFAULTS.colors, ...((config && config.colors) || {}) },
       };
-      this._brush = this._brush || "nom";
-      this._selectedHour = this._selectedHour ?? null;
+      this._selectedHours =
+        this._selectedHours instanceof Set ? this._selectedHours : new Set();
+      this._activeMode = this._activeMode ?? null;
       this._lastAppliedKey = null;
       this._schedule = this._normalizeSchedule(
         this._loadSchedule() ?? this._config.schedule
@@ -667,12 +668,12 @@ class ZendureScheduleCard extends HTMLElement {
             </div>
           </div>
 
-          <div class="brush-row" role="toolbar" aria-label="Penseel">
-            <button type="button" class="brush" data-brush="off">Uit</button>
-            <button type="button" class="brush" data-brush="nom">NOM</button>
-            <button type="button" class="brush" data-brush="nom_o">NOM-O</button>
-            <button type="button" class="brush" data-brush="charge">Laden</button>
-            <button type="button" class="brush" data-brush="discharge">Ontladen</button>
+          <div class="brush-row" role="toolbar" aria-label="Modus toekennen">
+            <button type="button" class="brush is-muted" data-brush="off" disabled>Uit</button>
+            <button type="button" class="brush is-muted" data-brush="nom" disabled>NOM</button>
+            <button type="button" class="brush is-muted" data-brush="nom_o" disabled>NOM-O</button>
+            <button type="button" class="brush is-muted" data-brush="charge" disabled>Laden</button>
+            <button type="button" class="brush is-muted" data-brush="discharge" disabled>Ontladen</button>
           </div>
 
           <div class="hours" role="grid" aria-label="24 uur schema"></div>
@@ -720,6 +721,11 @@ class ZendureScheduleCard extends HTMLElement {
             <button type="button" data-action="all-off">Alles uit</button>
             <button type="button" class="apply-now-btn" data-action="apply-now">Nu toepassen</button>
           </div>
+
+          <div class="footer-bar">
+            <button type="button" class="selection-clear hidden" data-action="clear-selection">Wis selectie</button>
+            <span class="selection-count" aria-live="polite">0 geselecteerd</span>
+          </div>
         </div>
       </div>
     `;
@@ -758,6 +764,9 @@ class ZendureScheduleCard extends HTMLElement {
       socMinLabel: card.querySelector(".soc-min-label"),
       socMinValue: card.querySelector(".soc-min-value"),
       applyBtn: card.querySelector(".apply-now-btn"),
+      brushRow: card.querySelector(".brush-row"),
+      selectionCount: card.querySelector(".selection-count"),
+      selectionClear: card.querySelector(".selection-clear"),
     };
 
     this._els.toggleBtn.addEventListener("click", () => {
@@ -766,48 +775,52 @@ class ZendureScheduleCard extends HTMLElement {
 
     this._els.brushes.forEach((btn) => {
       btn.addEventListener("click", () => {
-        this._brush = btn.dataset.brush;
-        this._syncChrome();
+        this._assignModeToSelection(btn.dataset.brush);
       });
     });
 
     this._els.powerSlider.addEventListener("input", () => {
-      if (this._selectedHour == null) return;
-      // Exacte sliderwaarde (stap 1), geen afronding naar 400 bij 350.
+      if (!this._hasSelection()) return;
       const power = this._literalPower(this._els.powerSlider.value);
-      this._schedule[this._selectedHour].power = power;
       this._els.powerSlider.value = String(power);
       this._els.powerValue.textContent = `${power} W`;
-      this._updateHourButton(this._selectedHour);
+      for (const h of this._selectedHours) {
+        this._schedule[h].power = power;
+        this._updateHourButton(h);
+      }
       this._persist();
     });
     this._els.powerSlider.addEventListener("change", () => {
-      if (this._selectedHour == null) return;
+      if (!this._hasSelection()) return;
       const now = new Date().getHours();
-      if (this._selectedHour === now) this._requestBackendApply();
+      if (this._selectedHours.has(now)) this._requestBackendApply();
     });
 
     this._els.socMaxSlider.addEventListener("input", () => {
-      if (this._selectedHour == null) return;
-      const mode = this._schedule[this._selectedHour].mode;
+      if (!this._hasSelection()) return;
+      const mode = this._selectionMode();
+      if (!mode) return;
       const soc = this._clampSoc(
         this._els.socMaxSlider.value,
         this._defaultSocForMode(mode)
       );
-      this._schedule[this._selectedHour].soc = soc;
       this._els.socMaxSlider.value = String(soc);
       this._els.socMaxValue.textContent = `${soc} %`;
+      for (const h of this._selectedHours) {
+        this._schedule[h].soc = soc;
+      }
       this._persist();
     });
     this._els.socMaxSlider.addEventListener("change", () => {
-      if (this._selectedHour == null) return;
+      if (!this._hasSelection()) return;
       const now = new Date().getHours();
-      if (this._selectedHour === now) this._requestBackendApply();
+      if (this._selectedHours.has(now)) this._requestBackendApply();
     });
 
     this._els.socMinSlider.addEventListener("input", () => {
-      if (this._selectedHour == null) return;
-      const mode = this._schedule[this._selectedHour].mode;
+      if (!this._hasSelection()) return;
+      const mode = this._selectionMode();
+      if (!mode) return;
       const isDischarge = mode === "discharge";
       const soc = this._clampSoc(
         this._els.socMinSlider.value,
@@ -815,19 +828,18 @@ class ZendureScheduleCard extends HTMLElement {
           ? this._defaultSocForMode(mode)
           : this._defaultSocMinForMode(mode)
       );
-      if (isDischarge) {
-        this._schedule[this._selectedHour].soc = soc;
-      } else {
-        this._schedule[this._selectedHour].soc_min = soc;
-      }
       this._els.socMinSlider.value = String(soc);
       this._els.socMinValue.textContent = `${soc} %`;
+      for (const h of this._selectedHours) {
+        if (isDischarge) this._schedule[h].soc = soc;
+        else this._schedule[h].soc_min = soc;
+      }
       this._persist();
     });
     this._els.socMinSlider.addEventListener("change", () => {
-      if (this._selectedHour == null) return;
+      if (!this._hasSelection()) return;
       const now = new Date().getHours();
-      if (this._selectedHour === now) this._requestBackendApply();
+      if (this._selectedHours.has(now)) this._requestBackendApply();
     });
 
     card.querySelectorAll("[data-action]").forEach((btn) => {
@@ -838,13 +850,18 @@ class ZendureScheduleCard extends HTMLElement {
           this._schedule = Array.from({ length: 24 }, () =>
             this._normalizeSlot({ mode: "nom", power })
           );
+          this._clearSelection();
           this._afterScheduleEdit();
         } else if (action === "all-off") {
           this._schedule = Array.from({ length: 24 }, () => this._defaultSlot());
-          this._selectedHour = null;
+          this._clearSelection();
           this._afterScheduleEdit();
         } else if (action === "apply-now") {
           this._onApplyNowClick();
+        } else if (action === "clear-selection") {
+          this._clearSelection();
+          this._syncChrome();
+          this._renderEditorPanel();
         }
       });
     });
@@ -870,6 +887,64 @@ class ZendureScheduleCard extends HTMLElement {
     this._requestBackendApply();
   }
 
+  _hasSelection() {
+    return (this._selectedHours?.size || 0) > 0;
+  }
+
+  _selectedList() {
+    return [...(this._selectedHours || [])].sort((a, b) => a - b);
+  }
+
+  _clearSelection() {
+    this._selectedHours = new Set();
+    this._activeMode = null;
+  }
+
+  /** Gemeenschappelijke modus van de selectie, of null bij gemengd/leeg. */
+  _selectionMode() {
+    const hours = this._selectedList();
+    if (!hours.length) return null;
+    if (this._activeMode && MODES.includes(this._activeMode)) {
+      if (hours.every((h) => this._schedule[h]?.mode === this._activeMode)) {
+        return this._activeMode;
+      }
+    }
+    const modes = new Set(hours.map((h) => this._schedule[h]?.mode));
+    return modes.size === 1 ? [...modes][0] : null;
+  }
+
+  _toggleHourSelection(h) {
+    if (!this._selectedHours) this._selectedHours = new Set();
+    if (this._selectedHours.has(h)) this._selectedHours.delete(h);
+    else this._selectedHours.add(h);
+    if (!this._hasSelection()) this._activeMode = null;
+    else if (
+      this._activeMode &&
+      ![...this._selectedHours].every(
+        (hour) => this._schedule[hour]?.mode === this._activeMode
+      )
+    ) {
+      this._activeMode = null;
+    }
+    this._syncChrome();
+    this._renderEditorPanel();
+  }
+
+  _assignModeToSelection(mode) {
+    if (!this._hasSelection() || !MODES.includes(mode)) return;
+    this._activeMode = mode;
+    const now = new Date().getHours();
+    let touchNow = false;
+    for (const h of this._selectedHours) {
+      this._applyModeToHour(h, mode);
+      if (h === now) touchNow = true;
+    }
+    this._persist();
+    this._syncChrome();
+    this._renderEditorPanel();
+    if (touchNow) this._requestBackendApply();
+  }
+
   _renderHours() {
     const root = this._els.hours;
     root.innerHTML = "";
@@ -883,9 +958,8 @@ class ZendureScheduleCard extends HTMLElement {
         <span class="hour-tag"></span>
         <span class="hour-power"></span>
       `;
-      // Alleen bij echte klik/tap schilderen — niet bij hover of slepen.
       btn.addEventListener("click", () => {
-        this._applyBrush(h, this._brush, true);
+        this._toggleHourSelection(h);
       });
       root.appendChild(btn);
     }
@@ -923,7 +997,7 @@ class ZendureScheduleCard extends HTMLElement {
       "mode-discharge"
     );
     btn.classList.add(`mode-${slot.mode}`);
-    btn.classList.toggle("selected", this._selectedHour === h);
+    btn.classList.toggle("selected", !!this._selectedHours?.has(h));
     const tags = {
       off: "—",
       nom: "NOM",
@@ -942,61 +1016,56 @@ class ZendureScheduleCard extends HTMLElement {
     }
   }
 
-  _applyBrush(hour, mode, select) {
+  _applyModeToHour(hour, mode) {
     if (hour < 0 || hour > 23 || !MODES.includes(mode)) return;
-    const prev = this._schedule[hour];
-    const fromPowerMode =
-      prev.mode === "charge" || prev.mode === "discharge";
-    const toPowerMode = mode === "charge" || mode === "discharge";
-    const keepPower =
-      toPowerMode && !fromPowerMode
-        ? this._defaultPower()
-        : Number.isFinite(Number(prev.power))
-          ? Number(prev.power)
-          : this._defaultPower();
-    const sameFamily =
-      (prev.mode === "charge" && mode === "charge") ||
-      (prev.mode === "discharge" && mode === "discharge") ||
-      (prev.mode === "nom" && mode === "nom") ||
-      (prev.mode === "nom_o" && mode === "nom_o");
-    const soc = sameFamily
-      ? this._clampSoc(prev.soc, this._defaultSocForMode(mode))
-      : this._defaultSocForMode(mode);
-    const socMin = sameFamily
-      ? this._clampSoc(prev.soc_min, this._defaultSocMinForMode(mode))
-      : this._defaultSocMinForMode(mode);
-    this._schedule[hour] = { mode, power: keepPower, soc, soc_min: socMin };
-    if (select) {
-      this._selectedHour = hour;
-    }
+    this._schedule[hour] = {
+      mode,
+      power: this._defaultPower(),
+      soc: this._defaultSocForMode(mode),
+      soc_min: this._defaultSocMinForMode(mode),
+    };
     this._updateHourButton(hour);
-    this._persist();
-    this._syncChrome();
-    this._renderEditorPanel();
-    const now = new Date().getHours();
-    if (hour === now) this._requestBackendApply();
   }
 
   _renderEditorPanel() {
     if (!this._els) return;
-    const h = this._selectedHour;
-    if (h == null || !this._schedule[h]) {
+    const hours = this._selectedList();
+    if (!hours.length) {
       this._els.editorPanel.classList.add("hidden");
       return;
     }
-    const slot = this._schedule[h];
-    this._els.editorPanel.classList.remove("hidden");
-    this._els.editorTitle.textContent = `Uur ${String(h).padStart(2, "0")}–${String(
-      (h + 1) % 24
-    ).padStart(2, "0")}`;
-    this._els.editorMode.textContent = this._modeLabel(slot.mode);
-    this._els.editorMode.dataset.mode = slot.mode;
 
-    const needsPower = slot.mode === "charge" || slot.mode === "discharge";
-    const isNom = slot.mode === "nom";
+    const mode = this._selectionMode();
+    this._els.editorPanel.classList.remove("hidden");
+
+    if (hours.length === 1) {
+      const h = hours[0];
+      this._els.editorTitle.textContent = `Uur ${String(h).padStart(2, "0")}–${String(
+        (h + 1) % 24
+      ).padStart(2, "0")}`;
+    } else {
+      this._els.editorTitle.textContent = `${hours.length} uren geselecteerd`;
+    }
+
+    if (!mode) {
+      this._els.editorMode.textContent = "Kies een modus";
+      this._els.editorMode.dataset.mode = "";
+      this._els.limitsWrap?.classList.add("hidden");
+      this._els.powerWrap.classList.add("hidden");
+      this._els.socMaxWrap?.classList.add("hidden");
+      this._els.socMinWrap?.classList.add("hidden");
+      return;
+    }
+
+    const slot = this._schedule[hours[0]];
+    this._els.editorMode.textContent = this._modeLabel(mode);
+    this._els.editorMode.dataset.mode = mode;
+
+    const needsPower = mode === "charge" || mode === "discharge";
+    const isNom = mode === "nom";
     const showSoc = this._showSoc() && (needsPower || isNom);
-    const showMaxSoc = showSoc && (slot.mode === "charge" || isNom);
-    const showMinSoc = showSoc && (slot.mode === "discharge" || isNom);
+    const showMaxSoc = showSoc && (mode === "charge" || isNom);
+    const showMinSoc = showSoc && (mode === "discharge" || isNom);
 
     this._els.limitsWrap?.classList.toggle("hidden", !needsPower && !showSoc);
     this._els.powerWrap.classList.toggle("hidden", !needsPower);
@@ -1012,9 +1081,9 @@ class ZendureScheduleCard extends HTMLElement {
     this._els.socMinWrap?.classList.toggle("hidden", !showMinSoc);
 
     if (showMaxSoc) {
-      const fallback = this._defaultSocForMode(slot.mode);
+      const fallback = this._defaultSocForMode(mode);
       const soc = this._clampSoc(slot.soc, fallback);
-      this._schedule[h].soc = soc;
+      for (const h of hours) this._schedule[h].soc = soc;
       this._els.socMaxSlider.value = String(soc);
       this._els.socMaxValue.textContent = `${soc} %`;
       this._els.socMaxLabel.textContent = "Max SOC";
@@ -1025,17 +1094,16 @@ class ZendureScheduleCard extends HTMLElement {
 
     if (showMinSoc) {
       const fallback =
-        slot.mode === "discharge"
-          ? this._defaultSocForMode(slot.mode)
-          : this._defaultSocMinForMode(slot.mode);
+        mode === "discharge"
+          ? this._defaultSocForMode(mode)
+          : this._defaultSocMinForMode(mode);
       const soc =
-        slot.mode === "discharge"
+        mode === "discharge"
           ? this._clampSoc(slot.soc, fallback)
           : this._clampSoc(slot.soc_min, fallback);
-      if (slot.mode === "discharge") {
-        this._schedule[h].soc = soc;
-      } else {
-        this._schedule[h].soc_min = soc;
+      for (const h of hours) {
+        if (mode === "discharge") this._schedule[h].soc = soc;
+        else this._schedule[h].soc_min = soc;
       }
       this._els.socMinSlider.value = String(soc);
       this._els.socMinValue.textContent = `${soc} %`;
@@ -1065,9 +1133,24 @@ class ZendureScheduleCard extends HTMLElement {
     if (this._els.legendNomO) this._els.legendNomO.textContent = nomOLabel;
     this._hourButtons?.forEach((_, h) => this._updateHourButton(h));
 
+    const armed = this._hasSelection();
+    this._els.brushRow?.classList.toggle("has-selection", armed);
     this._els.brushes.forEach((btn) => {
-      btn.classList.toggle("active", btn.dataset.brush === this._brush);
+      btn.disabled = !armed;
+      btn.classList.toggle("is-muted", !armed);
+      btn.classList.toggle(
+        "active",
+        armed && btn.dataset.brush === this._activeMode
+      );
     });
+
+    const count = this._selectedHours?.size || 0;
+    if (this._els.selectionCount) {
+      this._els.selectionCount.textContent =
+        count === 1 ? "1 geselecteerd" : `${count} geselecteerd`;
+      this._els.selectionCount.classList.toggle("has-selection", count > 0);
+    }
+    this._els.selectionClear?.classList.toggle("hidden", count === 0);
 
     this._renderNextMode();
   }
@@ -1532,34 +1615,53 @@ class ZendureScheduleCard extends HTMLElement {
         background: rgba(255,255,255,0.04); color: #9fc4d6;
         border-radius: 8px; padding: 8px 2px; cursor: pointer;
         font-size: 11px; letter-spacing: 0.3px;
+        transition: opacity 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+      }
+      .brush.is-muted,
+      .brush:disabled {
+        color: #5f7380;
+        border-color: rgba(255,255,255,0.05);
+        background: rgba(255,255,255,0.02);
+        box-shadow: none;
+        opacity: 0.45;
+        cursor: default;
+      }
+      .brush-row.has-selection .brush:not(:disabled) {
+        opacity: 1;
+        cursor: pointer;
       }
       .brush[data-brush="nom"].active {
         color: #eaffef;
         border-color: color-mix(in srgb, var(--color-nom) 85%, transparent);
         background: color-mix(in srgb, var(--color-nom) 28%, transparent);
         box-shadow: 0 0 10px color-mix(in srgb, var(--color-nom) 35%, transparent);
+        opacity: 1;
       }
       .brush[data-brush="nom_o"].active {
         color: #eafffa;
         border-color: color-mix(in srgb, var(--color-nom-o) 90%, transparent);
         background: color-mix(in srgb, var(--color-nom-o) 22%, transparent);
         box-shadow: 0 0 12px color-mix(in srgb, var(--color-nom-o) 40%, transparent);
+        opacity: 1;
       }
       .brush[data-brush="charge"].active {
         color: #eaf6ff;
         border-color: color-mix(in srgb, var(--color-charge) 70%, transparent);
         background: color-mix(in srgb, var(--color-charge) 20%, transparent);
         box-shadow: 0 0 10px color-mix(in srgb, var(--color-charge) 25%, transparent);
+        opacity: 1;
       }
       .brush[data-brush="discharge"].active {
         color: #fff3e0;
         border-color: color-mix(in srgb, var(--color-discharge) 70%, transparent);
         background: color-mix(in srgb, var(--color-discharge) 20%, transparent);
         box-shadow: 0 0 10px color-mix(in srgb, var(--color-discharge) 25%, transparent);
+        opacity: 1;
       }
       .brush[data-brush="off"].active {
         color: #d8e6ee; border-color: rgba(255,255,255,0.28);
         background: rgba(255,255,255,0.1);
+        opacity: 1;
       }
       .hours {
         display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px;
@@ -1698,6 +1800,22 @@ class ZendureScheduleCard extends HTMLElement {
         background: rgba(244,67,54,0.18);
         color: #ffebee;
       }
+      .footer-bar {
+        display: flex; justify-content: flex-end; align-items: center;
+        gap: 12px; margin-top: 10px; min-height: 22px;
+      }
+      .selection-count {
+        color: #6a8490; font-size: 11px; letter-spacing: 0.4px;
+        font-variant-numeric: tabular-nums;
+      }
+      .selection-count.has-selection { color: #eaf6ff; }
+      .selection-clear {
+        appearance: none; border: none; background: transparent;
+        color: #7fa6b8; font-size: 11px; cursor: pointer; padding: 0;
+        text-decoration: underline; text-underline-offset: 2px;
+      }
+      .selection-clear:hover { color: #eaf6ff; }
+      .selection-clear.hidden { display: none; }
     `;
   }
 }
