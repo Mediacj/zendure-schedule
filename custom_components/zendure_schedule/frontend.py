@@ -1,12 +1,11 @@
 """Serve and register the Lovelace card via /local/ (HACS-style).
 
-Debug showed: when the card fails, Chrome Network has ZERO requests for
-zendure-schedule.js — HA never even tries to load it. Working HACS cards
-(and Anker Solix) load from /hacsfiles or /local. The integration-only path
-/zendure_schedule/ is not always present in the frontend resource list.
+Symptom: ~2s leeg, daarna "Custom element doesn't exist". HA wacht kort op
+customElements.define. Een groot enkel JS-bestand is te laat; bootstrap in
+hetzelfde bestand helpt niet (ES modules voeren pas uit na volledige parse).
 
-Fix: copy the card into config/www/zendure-schedule/ and register
-/local/zendure-schedule/zendure-schedule.js as the Lovelace module.
+Fix: tiny stub registreert de tag meteen, laadt daarna zendure-schedule-card.js.
+Beide worden naar config/www/zendure-schedule/ gekopieerd (/local/...).
 """
 
 from __future__ import annotations
@@ -63,20 +62,27 @@ def _add_frontend_url(hass: HomeAssistant, url: str) -> None:
     add_extra_js_url(hass, url)
 
 
+CARD_BODY_FILENAME = "zendure-schedule-card.js"
+
+
 def _copy_card_to_local_www(hass: HomeAssistant, src_www: Path) -> Path | None:
-    """Copy card assets into config/www/zendure-schedule for /local/ serving."""
+    """Copy stub + card + logo into config/www/zendure-schedule for /local/."""
     dest_dir = Path(hass.config.path("www")) / LOCAL_DIR_NAME
     try:
         dest_dir.mkdir(parents=True, exist_ok=True)
-        for name in (CARD_FILENAME, "energienerds-logo.png"):
+        for name in (CARD_FILENAME, CARD_BODY_FILENAME, "energienerds-logo.png"):
             src = src_www / name
             if not src.is_file():
                 continue
-            dest = dest_dir / name
-            shutil.copy2(src, dest)
-        js_dest = dest_dir / CARD_FILENAME
-        if not js_dest.is_file():
-            _LOGGER.error("Kon card niet naar /local/ kopiëren: %s", js_dest)
+            shutil.copy2(src, dest_dir / name)
+        stub_ok = (dest_dir / CARD_FILENAME).is_file()
+        body_ok = (dest_dir / CARD_BODY_FILENAME).is_file()
+        if not stub_ok or not body_ok:
+            _LOGGER.error(
+                "Kon stub/card niet naar /local/ kopiëren (stub=%s card=%s)",
+                stub_ok,
+                body_ok,
+            )
             return None
         return dest_dir
     except OSError:
@@ -90,12 +96,17 @@ async def async_register_frontend(hass: HomeAssistant) -> None:
         return
 
     www_path = Path(__file__).parent / "www"
-    js_path = www_path / CARD_FILENAME
-    if not js_path.is_file():
-        _LOGGER.error("Zendure Schedule card niet gevonden: %s", js_path)
+    stub_path = www_path / CARD_FILENAME
+    body_path = www_path / CARD_BODY_FILENAME
+    if not stub_path.is_file() or not body_path.is_file():
+        _LOGGER.error(
+            "Zendure Schedule cardbestanden ontbreken (verwacht %s en %s)",
+            stub_path,
+            body_path,
+        )
         return
 
-    # 1) Keep integration static path (fallback / logo / old bookmarks).
+    # 1) Keep integration static path (fallback / relative imports).
     try:
         await hass.http.async_register_static_paths(
             [StaticPathConfig(FRONTEND_URL_BASE, str(www_path), False)]
@@ -103,24 +114,25 @@ async def async_register_frontend(hass: HomeAssistant) -> None:
     except RuntimeError:
         _LOGGER.debug("Static path %s already registered", FRONTEND_URL_BASE)
 
-    # 2) Copy into /local/zendure-schedule/ — reliable like other dashboard cards.
+    # 2) Copy into /local/zendure-schedule/.
     local_dir = await hass.async_add_executor_job(
         _copy_card_to_local_www, hass, www_path
     )
     primary_url = CARD_URL if local_dir is not None else LEGACY_URL
 
-    # 3) Early load on every frontend page.
+    # 3) Alleen de kleine stub vroeg laden — voorkomt HA's ~2s timeout.
     _add_frontend_url(hass, primary_url)
 
-    # 4) Lovelace resource (storage mode) — same mechanism as HACS cards.
+    # 4) Lovelace resource (storage mode).
     hass.async_create_task(
         _async_ensure_lovelace_resource(hass, primary_url=primary_url)
     )
 
     hass.data[_DATA_FRONTEND] = True
     _LOGGER.info(
-        "Zendure Schedule card beschikbaar op %s (local copy: %s)",
+        "Zendure Schedule stub op %s (card body: %s, local copy: %s)",
         primary_url,
+        CARD_BODY_FILENAME,
         local_dir is not None,
     )
 
