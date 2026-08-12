@@ -1,4 +1,4 @@
-"""Serve and register the bundled Lovelace card (tiny stub + full module)."""
+"""Serve and register the bundled Lovelace card."""
 
 from __future__ import annotations
 
@@ -23,10 +23,8 @@ try:
 except Exception:  # noqa: BLE001
     VERSION = "0"
 
-# Stub registreert de custom element meteen; full card laadt daarna.
 CARD_URL_PATH = f"{FRONTEND_URL_BASE}/{CARD_FILENAME}"
 CARD_URL = f"{CARD_URL_PATH}?v={VERSION}"
-CARD_BODY_FILENAME = "zendure-schedule-card.js"
 
 _DATA_FRONTEND = f"{DOMAIN}_frontend_registered"
 
@@ -51,13 +49,11 @@ async def async_register_frontend(hass: HomeAssistant) -> None:
         return
 
     www_path = Path(__file__).parent / "www"
-    stub_path = www_path / CARD_FILENAME
-    body_path = www_path / CARD_BODY_FILENAME
-    if not stub_path.is_file() or not body_path.is_file():
+    js_path = www_path / CARD_FILENAME
+    if not js_path.is_file():
         _LOGGER.error(
-            "Zendure Schedule cardbestanden ontbreken (verwacht %s en %s)",
-            stub_path,
-            body_path,
+            "Zendure Schedule card niet gevonden: %s",
+            js_path,
         )
         return
 
@@ -68,23 +64,21 @@ async def async_register_frontend(hass: HomeAssistant) -> None:
             ]
         )
     except RuntimeError:
+        # Already registered after reload
         _LOGGER.debug("Static path %s already registered", FRONTEND_URL_BASE)
 
-    # Alleen de kleine stub vroeg laden — voorkomt HA's 2s "element doesn't exist".
+    # Loads the module on every frontend page (YAML + storage Lovelace).
     _add_frontend_url(hass, CARD_URL)
 
+    # Explicit Lovelace resource so dashboards always pick it up.
     hass.async_create_task(_async_ensure_lovelace_resource(hass))
 
     hass.data[_DATA_FRONTEND] = True
-    _LOGGER.info(
-        "Zendure Schedule stub beschikbaar op %s (card: %s)",
-        CARD_URL,
-        CARD_BODY_FILENAME,
-    )
+    _LOGGER.info("Zendure Schedule card beschikbaar op %s", CARD_URL)
 
 
 async def _async_ensure_lovelace_resource(hass: HomeAssistant) -> None:
-    """Add/update the stub as a Lovelace module resource (storage mode)."""
+    """Add/update the card as a Lovelace module resource (storage mode)."""
 
     def _retry_later() -> None:
         @callback
@@ -121,17 +115,16 @@ async def _async_ensure_lovelace_resource(hass: HomeAssistant) -> None:
             _LOGGER.debug("Kon Lovelace resources niet uitlezen", exc_info=True)
             return
 
+        # Verwijder/update alle resources die naar deze card wijzen,
+        # zodat er geen oude ?v= of dubbele entries blijven hangen.
         matches = []
         for item in items:
             url = str(item.get("url", ""))
             path = url.split("?", 1)[0]
-            # Stub én oude full-card resources opruimen/bijwerken.
             if (
                 path == CARD_URL_PATH
                 or path.endswith(f"/{CARD_FILENAME}")
-                or path.endswith(f"/{CARD_BODY_FILENAME}")
                 or CARD_FILENAME in path
-                or CARD_BODY_FILENAME in path
             ):
                 matches.append(item)
 
@@ -155,12 +148,12 @@ async def _async_ensure_lovelace_resource(hass: HomeAssistant) -> None:
                 try:
                     await resources.async_delete_item(dup["id"])
                     _LOGGER.info(
-                        "Dubbele/oude Lovelace resource verwijderd: %s",
+                        "Dubbele Lovelace resource verwijderd: %s",
                         dup.get("url"),
                     )
                 except Exception:  # noqa: BLE001
                     _LOGGER.debug(
-                        "Kon resource niet verwijderen: %s",
+                        "Kon dubbele resource niet verwijderen: %s",
                         dup.get("url"),
                         exc_info=True,
                     )
