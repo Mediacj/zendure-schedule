@@ -33,7 +33,7 @@ Zelfstandige custom integration met 24u-planner voor Zendure (NOM / NOM-O / lade
    - Laadvermogen (number)
    - Ontlaadvermogen (number)
 
-De card wordt automatisch geladen via `/zendure_schedule/zendure-schedule.js`.
+De card wordt automatisch geladen via `/zendure_schedule/zendure-schedule.js` als Lovelace JavaScript-module (zelfde patroon als HACS-cards zoals Anker Solix Display Card: directe `customElements.define`, geen bootstrap-wrapper).
 
 ## Schermvoorbeeld
 
