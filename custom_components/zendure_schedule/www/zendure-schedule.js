@@ -4,7 +4,188 @@
  * Backend applies the hourly plan; entities come from the integration config.
  */
 
-const CARD_VERSION = "1.0.25";
+/* -------------------------------------------------------------------------- */
+/* Early bootstrap: registreer de tag DIRECT, vóór de zware class-parse.       */
+/* Zo bestaat custom:zendure-schedule altijd → geen "doesn't exist"-fout.     */
+/* -------------------------------------------------------------------------- */
+(() => {
+  const TAG = "zendure-schedule";
+  const EDITOR = "zendure-schedule-editor";
+  const INNER = "zendure-schedule-inner";
+  const EDITOR_INNER = "zendure-schedule-editor-inner";
+
+  const walkShadow = (root, fn) => {
+    if (!root) return;
+    try {
+      fn(root);
+    } catch (_e) {
+      /* ignore */
+    }
+    root.querySelectorAll?.("*").forEach((el) => {
+      if (el.shadowRoot) walkShadow(el.shadowRoot, fn);
+    });
+  };
+
+  const rebuildLovelace = () => {
+    walkShadow(document, (root) => {
+      root
+        .querySelectorAll?.(
+          "hui-error-card, hui-card, hui-view, hui-masonry-view, hui-section-view, hui-grid-section"
+        )
+        ?.forEach((el) => {
+          el.dispatchEvent(
+            new CustomEvent("ll-rebuild", { bubbles: true, composed: true })
+          );
+        });
+    });
+    try {
+      window.dispatchEvent(
+        new CustomEvent("ll-rebuild", { bubbles: true, composed: true })
+      );
+    } catch (_e) {
+      /* ignore */
+    }
+  };
+
+  window.__zendureScheduleRebuild = rebuildLovelace;
+
+  if (!customElements.get(TAG)) {
+    class ZendureScheduleBootstrap extends HTMLElement {
+      static getConfigElement() {
+        return document.createElement(EDITOR);
+      }
+
+      static getStubConfig() {
+        return { title: "ZENDURE PLANNER" };
+      }
+
+      setConfig(config) {
+        this._cfg = config || {};
+        this._ensure();
+      }
+
+      set hass(hass) {
+        this._hass = hass;
+        if (this._inner) this._inner.hass = hass;
+        else this._ensure();
+      }
+
+      connectedCallback() {
+        this.style.display = "block";
+        this._ensure();
+      }
+
+      _ensure() {
+        if (!customElements.get(INNER)) {
+          if (!this._loadingShown) {
+            this._loadingShown = true;
+            this.innerHTML =
+              '<ha-card style="padding:18px 16px;text-align:center">' +
+              '<div style="color:#eaf6ff;font-size:13px;font-weight:600;letter-spacing:1px">ZENDURE PLANNER</div>' +
+              '<div style="color:#7fa6b8;font-size:11px;margin-top:8px">Card wordt geladen…</div>' +
+              "</ha-card>";
+          }
+          return;
+        }
+        if (this._inner) {
+          try {
+            if (this._cfg) this._inner.setConfig(this._cfg);
+          } catch (_e) {
+            /* ignore */
+          }
+          if (this._hass) this._inner.hass = this._hass;
+          return;
+        }
+        this.innerHTML = "";
+        this._loadingShown = false;
+        const inner = document.createElement(INNER);
+        if (this._cfg) inner.setConfig(this._cfg);
+        if (this._hass) inner.hass = this._hass;
+        this.appendChild(inner);
+        this._inner = inner;
+      }
+    }
+    customElements.define(TAG, ZendureScheduleBootstrap);
+  }
+
+  if (!customElements.get(EDITOR)) {
+    class ZendureScheduleEditorBootstrap extends HTMLElement {
+      setConfig(config) {
+        this._cfg = config || {};
+        this._ensure();
+      }
+
+      set hass(hass) {
+        this._hass = hass;
+        if (this._inner) this._inner.hass = hass;
+        else this._ensure();
+      }
+
+      connectedCallback() {
+        this._ensure();
+      }
+
+      _ensure() {
+        if (!customElements.get(EDITOR_INNER)) return;
+        if (this._inner) {
+          try {
+            if (this._cfg) this._inner.setConfig(this._cfg);
+          } catch (_e) {
+            /* ignore */
+          }
+          if (this._hass) this._inner.hass = this._hass;
+          return;
+        }
+        this.innerHTML = "";
+        const inner = document.createElement(EDITOR_INNER);
+        if (this._cfg) inner.setConfig(this._cfg);
+        if (this._hass) inner.hass = this._hass;
+        this.appendChild(inner);
+        this._inner = inner;
+      }
+    }
+    customElements.define(EDITOR, ZendureScheduleEditorBootstrap);
+  }
+
+  window.customCards = window.customCards || [];
+  if (!window.customCards.some((c) => c.type === TAG)) {
+    window.customCards.push({
+      type: TAG,
+      name: "Zendure Schedule",
+      description:
+        "Integratie-card: 24u NOM / NOM-O / laden / ontladen. Werkt zonder community resource.",
+      preview: true,
+    });
+  }
+
+  window.__zendureScheduleActivate = () => {
+    walkShadow(document, (root) => {
+      root.querySelectorAll?.(TAG).forEach((el) => {
+        try {
+          el._inner = null;
+          el._loadingShown = false;
+          el._ensure?.();
+        } catch (_e) {
+          /* ignore */
+        }
+      });
+      root.querySelectorAll?.(EDITOR).forEach((el) => {
+        try {
+          el._inner = null;
+          el._ensure?.();
+        } catch (_e) {
+          /* ignore */
+        }
+      });
+    });
+    // Extra rebuilds (incl. 1s) voor views die al een error-card toonden.
+    [0, 250, 1000, 2000].forEach((ms) => {
+      window.setTimeout(rebuildLovelace, ms);
+    });
+  };
+})();
+
+const CARD_VERSION = "1.0.26";
 const LOGO_URL = `/zendure_schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
@@ -1674,41 +1855,8 @@ class ZendureScheduleCard extends HTMLElement {
   }
 }
 
-if (!customElements.get("zendure-schedule")) {
-  customElements.define("zendure-schedule", ZendureScheduleCard);
-}
-
-// Eén gecontroleerde rebuild als de module ná Lovelace laadt (voorkomt leeg dashboard).
-if (!window.__ZENDURE_SCHEDULE_CARD_READY__) {
-  window.__ZENDURE_SCHEDULE_CARD_READY__ = true;
-  const _rebuildErrorCards = () => {
-    const roots = [document];
-    const seen = new Set();
-    while (roots.length) {
-      const root = roots.pop();
-      if (!root || seen.has(root)) continue;
-      seen.add(root);
-      root.querySelectorAll?.("hui-error-card").forEach((el) => {
-        el.dispatchEvent(
-          new CustomEvent("ll-rebuild", { bubbles: true, composed: true })
-        );
-      });
-      root.querySelectorAll?.("*").forEach((el) => {
-        if (el.shadowRoot) roots.push(el.shadowRoot);
-      });
-    }
-  };
-  const _scheduleRebuild = () => {
-    window.setTimeout(_rebuildErrorCards, 0);
-    window.setTimeout(_rebuildErrorCards, 400);
-  };
-  if (customElements.get("hui-masonry-view") || customElements.get("hui-view")) {
-    _scheduleRebuild();
-  } else {
-    customElements.whenDefined("hui-view").then(_scheduleRebuild).catch(() => {
-      _scheduleRebuild();
-    });
-  }
+if (!customElements.get("zendure-schedule-inner")) {
+  customElements.define("zendure-schedule-inner", ZendureScheduleCard);
 }
 
 class ZendureScheduleEditor extends HTMLElement {
@@ -2112,17 +2260,15 @@ class ZendureScheduleEditor extends HTMLElement {
   }
 }
 
-if (!customElements.get("zendure-schedule-editor")) {
-  customElements.define("zendure-schedule-editor", ZendureScheduleEditor);
+if (!customElements.get("zendure-schedule-editor-inner")) {
+  customElements.define("zendure-schedule-editor-inner", ZendureScheduleEditor);
 }
 
-window.customCards = window.customCards || [];
-if (!window.customCards.some((c) => c.type === "zendure-schedule")) {
-  window.customCards.push({
-    type: "zendure-schedule",
-    name: "Zendure Schedule",
-    description:
-      "Integratie-card: 24u NOM / NOM-O / laden / ontladen. Werkt zonder community resource.",
-    preview: true,
+// Activeer bootstrap-instances + rebuilds (0 / 250ms / 1s / 2s).
+if (typeof window.__zendureScheduleActivate === "function") {
+  window.__zendureScheduleActivate();
+} else if (typeof window.__zendureScheduleRebuild === "function") {
+  [0, 250, 1000, 2000].forEach((ms) => {
+    window.setTimeout(window.__zendureScheduleRebuild, ms);
   });
 }
