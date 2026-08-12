@@ -1,11 +1,8 @@
 """Serve and register the Lovelace card via /local/ (HACS-style).
 
-Symptom: ~2s leeg, daarna "Custom element doesn't exist". HA wacht kort op
-customElements.define. Een groot enkel JS-bestand is te laat; bootstrap in
-hetzelfde bestand helpt niet (ES modules voeren pas uit na volledige parse).
-
-Fix: tiny stub registreert de tag meteen, laadt daarna zendure-schedule-card.js.
-Beide worden naar config/www/zendure-schedule/ gekopieerd (/local/...).
+Tiny stub registreert de tag snel; full card laadt daarna.
+HA 2026.8: stub healt ook de scoped-customElements registry race
+(frontend#52960) die anders een configuratiefout geeft ondanks geladen JS.
 """
 
 from __future__ import annotations
@@ -210,18 +207,11 @@ async def _async_ensure_lovelace_resource(
                 _LOGGER.info("Lovelace resource bijgewerkt: %s", primary_url)
 
             for dup in matches[1:]:
-                try:
-                    await resources.async_delete_item(dup["id"])
-                    _LOGGER.info(
-                        "Dubbele Lovelace resource verwijderd: %s",
-                        dup.get("url"),
-                    )
-                except Exception:  # noqa: BLE001
-                    _LOGGER.debug(
-                        "Kon resource niet verwijderen: %s",
-                        dup.get("url"),
-                        exc_info=True,
-                    )
+                # Niet verwijderen: delete tijdens startup veroorzaakt races.
+                _LOGGER.debug(
+                    "Extra Zendure Lovelace resource blijft staan: %s",
+                    dup.get("url"),
+                )
         except Exception:  # noqa: BLE001
             _LOGGER.warning(
                 "Kon Lovelace resource niet registreren; voeg handmatig toe: %s",

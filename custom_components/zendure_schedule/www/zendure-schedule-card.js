@@ -3,10 +3,39 @@
  * Do not register this file as a Lovelace resource; use the stub instead.
  */
 
-const CARD_VERSION = "1.0.33";
+const CARD_VERSION = "1.0.34";
 const LOGO_URL = `/local/zendure-schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
+
+/** HA 2026.8 scoped customElements race heal (frontend#52960). */
+const defineElement = (name, ctor) => {
+  const registryAtLoad = customElements;
+  if (!registryAtLoad.get(name)) {
+    registryAtLoad.define(name, ctor);
+  }
+  const heal = (via) => {
+    if (customElements.get(name)) return;
+    try {
+      customElements.define(name, ctor);
+      console.info(
+        `ZENDURE-SCHEDULE: re-defined ${name} after registry swap (${via})`
+      );
+      if (typeof window.__zendureScheduleActivate === "function") {
+        window.__zendureScheduleActivate();
+      }
+    } catch (err) {
+      console.warn(`ZENDURE-SCHEDULE: re-define ${name} failed (${via})`, err);
+    }
+  };
+  registryAtLoad
+    .whenDefined("home-assistant")
+    .then(() => heal("ha-boot"))
+    .catch(() => {});
+  [0, 50, 100, 250, 500, 1000, 1500, 2000, 5000].forEach((ms) => {
+    window.setTimeout(() => heal(`timer:${ms}ms`), ms);
+  });
+};
 const MODES = ["off", "nom", "nom_o", "charge", "discharge"];
 const MODE_LABEL = {
   off: "Uit",
@@ -1673,9 +1702,7 @@ class ZendureScheduleCard extends HTMLElement {
   }
 }
 
-if (!customElements.get("zendure-schedule-inner")) {
-  customElements.define("zendure-schedule-inner", ZendureScheduleCard);
-}
+defineElement("zendure-schedule-inner", ZendureScheduleCard);
 
 class ZendureScheduleEditor extends HTMLElement {
   setConfig(config) {
@@ -2078,9 +2105,7 @@ class ZendureScheduleEditor extends HTMLElement {
   }
 }
 
-if (!customElements.get("zendure-schedule-editor-inner")) {
-  customElements.define("zendure-schedule-editor-inner", ZendureScheduleEditor);
-}
+defineElement("zendure-schedule-editor-inner", ZendureScheduleEditor);
 
 // Activeer bootstrap-instances + rebuilds (0 / 250ms / 1s / 2s).
 if (typeof window.__zendureScheduleActivate === "function") {
