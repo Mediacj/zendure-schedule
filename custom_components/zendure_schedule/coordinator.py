@@ -601,14 +601,10 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not force and self._last_applied_key == key and matches_live:
             return
         if not matches_live and self._last_applied_key == key:
-            _LOGGER.warning(
-                "Zendure Schedule drift gedetecteerd (%s, live actief=%s) — herstel",
+            # Geen warning: HA toont dit als "fout door aangepaste integratie".
+            _LOGGER.debug(
+                "Zendure Schedule drift (%s) — herstel",
                 key,
-                self._number_value(
-                    charge_power
-                    if mode == MODE_CHARGE
-                    else discharge_power
-                ),
             )
 
         try:

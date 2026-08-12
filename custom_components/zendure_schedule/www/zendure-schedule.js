@@ -185,7 +185,7 @@
   };
 })();
 
-const CARD_VERSION = "1.0.30";
+const CARD_VERSION = "1.0.31";
 const LOGO_URL = `/zendure_schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
