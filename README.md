@@ -33,7 +33,10 @@ Zelfstandige custom integration met 24u-planner voor Zendure (NOM / NOM-O / lade
    - Laadvermogen (number)
    - Ontlaadvermogen (number)
 
-De card wordt automatisch geladen via `/zendure_schedule/zendure-schedule.js`.
+De card wordt automatisch geladen via `/zendure_schedule/zendure-schedule.js` (kleine stub). Die registreert het custom element meteen en laadt daarna `/zendure_schedule/zendure-schedule-card.js`.
+
+> **Let op:** voeg in Dashboard → Bronnen alleen de **stub** toe (niet de `-card.js`), als je handmatig iets zet:
+> `/zendure_schedule/zendure-schedule.js` als type **JavaScript-module**.
 
 ## Schermvoorbeeld
 
@@ -172,3 +175,15 @@ Daarnaast controleert de integratie **elke minuut** of het live vermogen/modus n
 **Planner uit** of **huidig uur = Uit**: één keer `0 W`, daarna **geen** minutencheck/herstel meer (oude waarden worden niet teruggezet). Pas weer actief bij planner aan + uur ≠ uit.
 
 `power_step` bepaalt alleen de **sliderstap** in de UI. Bij toepassen gaat de gekozen waarde **letterlijk** door — er wordt niet mee gerekend of afgerond.
+
+## Troubleshooting: “Custom element doesn't exist”
+
+Sinds v1.0.27 laadt een **kleine stub** eerst (registreert `zendure-schedule` binnen milliseconden). De zware card volgt daarna.
+
+Als je de fout toch ziet:
+
+1. HACS-update + **Home Assistant herstarten**
+2. Hard refresh (Ctrl/Cmd+Shift+R) of companion-app: frontend-cache wissen
+3. Controleer **Dashboard → Bronnen**: één module-URL `/zendure_schedule/zendure-schedule.js?v=…` — geen oude dubbele entries naar alleen `-card.js`
+4. Verwijder handmatige community-resources voor deze card als die nog bestaan
+
