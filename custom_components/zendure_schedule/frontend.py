@@ -1,10 +1,4 @@
-"""Serve and register the Lovelace card like a normal HACS frontend card.
-
-Anker Solix Display Card (and most reliable HACS cards) load as a single
-JavaScript module via Lovelace resources — no bootstrap wrappers. We mirror
-that: static file + one module resource URL. extra_module_url is only a
-fallback for YAML-mode dashboards without a resources store.
-"""
+"""Serve and register the bundled Lovelace card."""
 
 from __future__ import annotations
 
@@ -36,7 +30,7 @@ _DATA_FRONTEND = f"{DOMAIN}_frontend_registered"
 
 
 def _add_frontend_url(hass: HomeAssistant, url: str) -> None:
-    """Register module URL (YAML-mode / early load fallback)."""
+    """Register module URL; fall back to legacy extra JS url."""
     try:
         from homeassistant.components.frontend import add_extra_module_url
 
@@ -50,25 +44,33 @@ def _add_frontend_url(hass: HomeAssistant, url: str) -> None:
 
 
 async def async_register_frontend(hass: HomeAssistant) -> None:
-    """Register static path and Lovelace module resource (Anker-style)."""
+    """Register static path, extra JS url and Lovelace resource."""
     if hass.data.get(_DATA_FRONTEND):
         return
 
     www_path = Path(__file__).parent / "www"
     js_path = www_path / CARD_FILENAME
     if not js_path.is_file():
-        _LOGGER.error("Zendure Schedule card niet gevonden: %s", js_path)
+        _LOGGER.error(
+            "Zendure Schedule card niet gevonden: %s",
+            js_path,
+        )
         return
 
     try:
         await hass.http.async_register_static_paths(
-            [StaticPathConfig(FRONTEND_URL_BASE, str(www_path), False)]
+            [
+                StaticPathConfig(FRONTEND_URL_BASE, str(www_path), False),
+            ]
         )
     except RuntimeError:
+        # Already registered after reload
         _LOGGER.debug("Static path %s already registered", FRONTEND_URL_BASE)
 
-    # Same URL as resource — ES modules evaluate once even if both paths load.
+    # Loads the module on every frontend page (YAML + storage Lovelace).
     _add_frontend_url(hass, CARD_URL)
+
+    # Explicit Lovelace resource so dashboards always pick it up.
     hass.async_create_task(_async_ensure_lovelace_resource(hass))
 
     hass.data[_DATA_FRONTEND] = True
@@ -76,7 +78,7 @@ async def async_register_frontend(hass: HomeAssistant) -> None:
 
 
 async def _async_ensure_lovelace_resource(hass: HomeAssistant) -> None:
-    """Ensure exactly one Lovelace module resource points at the card."""
+    """Add/update the card as a Lovelace module resource (storage mode)."""
 
     def _retry_later() -> None:
         @callback
@@ -94,7 +96,8 @@ async def _async_ensure_lovelace_resource(hass: HomeAssistant) -> None:
         resources = getattr(lovelace, "resources", None)
         if resources is None:
             _LOGGER.debug(
-                "Geen Lovelace resources (YAML-mode) — card via extra_module_url: %s",
+                "Lovelace resources niet beschikbaar (YAML-mode?): "
+                "card laadt via frontend extra url (%s)",
                 CARD_URL,
             )
             return
@@ -112,6 +115,8 @@ async def _async_ensure_lovelace_resource(hass: HomeAssistant) -> None:
             _LOGGER.debug("Kon Lovelace resources niet uitlezen", exc_info=True)
             return
 
+        # Verwijder/update alle resources die naar deze card wijzen,
+        # zodat er geen oude ?v= of dubbele entries blijven hangen.
         matches = []
         for item in items:
             url = str(item.get("url", ""))
@@ -119,7 +124,7 @@ async def _async_ensure_lovelace_resource(hass: HomeAssistant) -> None:
             if (
                 path == CARD_URL_PATH
                 or path.endswith(f"/{CARD_FILENAME}")
-                or "zendure-schedule" in path
+                or CARD_FILENAME in path
             ):
                 matches.append(item)
 
@@ -148,13 +153,14 @@ async def _async_ensure_lovelace_resource(hass: HomeAssistant) -> None:
                     )
                 except Exception:  # noqa: BLE001
                     _LOGGER.debug(
-                        "Kon resource niet verwijderen: %s",
+                        "Kon dubbele resource niet verwijderen: %s",
                         dup.get("url"),
                         exc_info=True,
                     )
         except Exception:  # noqa: BLE001
             _LOGGER.warning(
-                "Kon Lovelace resource niet registreren; voeg handmatig toe: %s",
+                "Kon Lovelace resource niet registreren; "
+                "voeg handmatig toe als module: %s",
                 CARD_URL,
                 exc_info=True,
             )
