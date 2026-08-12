@@ -3,7 +3,7 @@
  * Do not register this file as a Lovelace resource; use the stub instead.
  */
 
-const CARD_VERSION = "1.0.35";
+const CARD_VERSION = "1.0.36";
 const LOGO_URL = `/local/zendure-schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
@@ -424,24 +424,61 @@ class ZendureScheduleCard extends HTMLElement {
     this._queueStorageWrite();
   }
 
-  /** Compact format: e=1;m=oonxc...;p=0,0,500,...;s=0,100,...;n=0,10,... */
+  /** Compact ≤255: e=1;m=24;p=96digits[;s=48][;n=48] (legacy comma-lists OK). */
   _serializeCompact() {
     this._syncEnabledFromHass();
     const m = this._schedule
       .map((s) => MODE_TO_CHAR[s.mode] || "o")
       .join("");
-    const p = this._schedule.map((s) => Math.round(s.power || 0)).join(",");
-    const s = this._schedule
-      .map((slot) =>
-        this._clampSoc(slot.soc, this._defaultSocForMode(slot.mode))
-      )
-      .join(",");
-    const n = this._schedule
-      .map((slot) =>
-        this._clampSoc(slot.soc_min, this._defaultSocMinForMode(slot.mode))
-      )
-      .join(",");
-    return `e=${this._enabled ? 1 : 0};m=${m};p=${p};s=${s};n=${n}`;
+    const p = this._schedule
+      .map((s) => {
+        const watts = Math.max(0, Math.min(9999, Math.round(s.power || 0)));
+        return String(watts).padStart(4, "0");
+      })
+      .join("");
+    const parts = [`e=${this._enabled ? 1 : 0}`, `m=${m}`, `p=${p}`];
+
+    const socs = this._schedule.map((slot) =>
+      this._clampSoc(slot.soc, this._defaultSocForMode(slot.mode))
+    );
+    const mins = this._schedule.map((slot) =>
+      this._clampSoc(slot.soc_min, this._defaultSocMinForMode(slot.mode))
+    );
+    const socCustom = this._schedule.some(
+      (slot, i) => socs[i] !== this._defaultSocForMode(slot.mode)
+    );
+    const minCustom = this._schedule.some(
+      (slot, i) => mins[i] !== this._defaultSocMinForMode(slot.mode)
+    );
+    if (socCustom) {
+      parts.push(`s=${socs.map((v) => String(v).padStart(2, "0")).join("")}`);
+    }
+    if (minCustom) {
+      parts.push(`n=${mins.map((v) => String(v).padStart(2, "0")).join("")}`);
+    }
+    return parts.join(";");
+  }
+
+  _unpackPowers(raw) {
+    if (!raw) return [];
+    if (raw.includes(",")) return raw.split(",");
+    if (raw.length >= 96 && /^\d+$/.test(raw.slice(0, 96))) {
+      const out = [];
+      for (let i = 0; i < 96; i += 4) out.push(raw.slice(i, i + 4));
+      return out;
+    }
+    return [];
+  }
+
+  _unpackSocs(raw) {
+    if (!raw) return [];
+    if (raw.includes(",")) return raw.split(",");
+    if (raw.length >= 48 && /^\d+$/.test(raw.slice(0, 48))) {
+      const out = [];
+      for (let i = 0; i < 48; i += 2) out.push(raw.slice(i, i + 2));
+      return out;
+    }
+    return [];
   }
 
   _parseCompact(raw) {
@@ -466,15 +503,9 @@ class ZendureScheduleCard extends HTMLElement {
       })
     );
     if (!parts.m || parts.m.length < 24) return null;
-    const powers = (parts.p || "")
-      .split(",")
-      .map((n) => parseInt(n, 10));
-    const socs = (parts.s || "")
-      .split(",")
-      .map((n) => parseInt(n, 10));
-    const mins = (parts.n || "")
-      .split(",")
-      .map((n) => parseInt(n, 10));
+    const powers = this._unpackPowers(parts.p || "").map((n) => parseInt(n, 10));
+    const socs = this._unpackSocs(parts.s || "").map((n) => parseInt(n, 10));
+    const mins = this._unpackSocs(parts.n || "").map((n) => parseInt(n, 10));
     const hours = [];
     for (let i = 0; i < 24; i++) {
       const mode = CHAR_TO_MODE[parts.m[i]] || "off";
@@ -528,11 +559,13 @@ class ZendureScheduleCard extends HTMLElement {
       return Promise.resolve(false);
     }
     const value = this._serializeCompact();
-    if (value.length > 768) {
+    if (value.length > 255) {
       console.error(
-        "Zendure Schedule Card: schema langer dan verwacht:",
-        value.length
+        "Zendure Schedule Card: schema past niet in HA state (max 255):",
+        value.length,
+        value
       );
+      return Promise.resolve(false);
     }
     this._lastStorageRaw = value;
     this._storageSynced = true;

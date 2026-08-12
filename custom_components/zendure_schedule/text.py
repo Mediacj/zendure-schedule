@@ -41,7 +41,7 @@ class ZendureScheduleText(TextEntity):
     _attr_has_entity_name = True
     _attr_name = "Schema"
     _attr_native_min = 0
-    _attr_native_max = 768
+    _attr_native_max = 255
     _attr_mode = TextMode.TEXT
     _attr_icon = "mdi:calendar-text"
 
