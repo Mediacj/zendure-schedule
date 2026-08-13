@@ -28,6 +28,7 @@ from .const import (
     CONF_DISCHARGE_SOC_ENTITY,
     CONF_MAX_POWER,
     CONF_MIN_POWER,
+    CONF_NOM_L_OPTION,
     CONF_NOM_O_OPTION,
     CONF_NOM_OPTION,
     CONF_OFF_OPTION,
@@ -43,6 +44,7 @@ from .const import (
     DEFAULT_DISCHARGE_SOC,
     DEFAULT_MAX_POWER,
     DEFAULT_MIN_POWER,
+    DEFAULT_NOM_L_OPTION,
     DEFAULT_NOM_O_OPTION,
     DEFAULT_NOM_OPTION,
     DEFAULT_OFF_OPTION,
@@ -51,8 +53,10 @@ from .const import (
     MODE_CHARGE,
     MODE_DISCHARGE,
     MODE_NOM,
+    MODE_NOM_L,
     MODE_NOM_O,
     MODE_OFF,
+    SMART_SOC_MODES,
 )
 from .schedule import (
     clamp_soc,
@@ -374,6 +378,7 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         aliases = {
             "smart": ["smart"],
             "smart_discharging": ["smart_discharging", "smart discharging"],
+            "smart_charging": ["smart_charging", "smart charging"],
             "off": ["off"],
             "input": ["input", "charge"],
             "output": ["output", "discharge"],
@@ -440,9 +445,14 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if mode == MODE_OFF:
             return True
 
-        if mode == MODE_NOM:
+        if mode in SMART_SOC_MODES:
+            option_key = {
+                MODE_NOM: (CONF_NOM_OPTION, DEFAULT_NOM_OPTION),
+                MODE_NOM_O: (CONF_NOM_O_OPTION, DEFAULT_NOM_O_OPTION),
+                MODE_NOM_L: (CONF_NOM_L_OPTION, DEFAULT_NOM_L_OPTION),
+            }[mode]
             wanted = self._resolve_option(
-                operation, str(self._cfg(CONF_NOM_OPTION, DEFAULT_NOM_OPTION))
+                operation, str(self._cfg(option_key[0], option_key[1]))
             )
             if wanted is None or self._select_value(operation) != wanted:
                 return False
@@ -455,13 +465,6 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ):
                 return False
             return True
-
-        if mode == MODE_NOM_O:
-            wanted = self._resolve_option(
-                operation,
-                str(self._cfg(CONF_NOM_O_OPTION, DEFAULT_NOM_O_OPTION)),
-            )
-            return wanted is not None and self._select_value(operation) == wanted
 
         if mode not in (MODE_CHARGE, MODE_DISCHARGE):
             return True
@@ -529,7 +532,7 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         soc_min = clamp_soc(
             slot.get("soc_min"),
-            self.default_discharge_soc if mode == MODE_NOM else 0,
+            self.default_discharge_soc if mode in SMART_SOC_MODES else 0,
         )
 
         operation = str(self._cfg(CONF_OPERATION_ENTITY, ""))
@@ -610,7 +613,7 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             charge_soc_entity=charge_soc_entity,
             discharge_soc_entity=discharge_soc_entity,
         )
-        # NOM→NOM / NOM-O→NOM-O / laden→laden: modus loopt door.
+        # NOM→NOM / SLM-O→SLM-O / SLM-L→SLM-L / laden→laden: modus loopt door.
         # Niets doen als live al klopt (ook bij force van uur-tick).
         if (
             prev_mode == mode
@@ -651,10 +654,15 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
                 return
             self._off_hour_quiet = None
-            if mode == MODE_NOM:
+            if mode in SMART_SOC_MODES:
+                option_key = {
+                    MODE_NOM: (CONF_NOM_OPTION, DEFAULT_NOM_OPTION),
+                    MODE_NOM_O: (CONF_NOM_O_OPTION, DEFAULT_NOM_O_OPTION),
+                    MODE_NOM_L: (CONF_NOM_L_OPTION, DEFAULT_NOM_L_OPTION),
+                }[mode]
                 await self._async_select_option(
                     operation,
-                    str(self._cfg(CONF_NOM_OPTION, DEFAULT_NOM_OPTION)),
+                    str(self._cfg(option_key[0], option_key[1])),
                 )
                 max_soc = soc
                 min_soc = soc_min
@@ -668,12 +676,6 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     max_soc,
                     min_soc,
                 )
-            elif mode == MODE_NOM_O:
-                await self._async_select_option(
-                    operation,
-                    str(self._cfg(CONF_NOM_O_OPTION, DEFAULT_NOM_O_OPTION)),
-                )
-                _LOGGER.info("Zendure Schedule toegepast: %s:%s", hour, mode)
             elif mode in (MODE_CHARGE, MODE_DISCHARGE):
                 await self._async_select_option(
                     operation,

@@ -3,7 +3,7 @@
  * Do not register this file as a Lovelace resource; use the stub instead.
  */
 
-const CARD_VERSION = "1.0.40";
+const CARD_VERSION = "1.0.41";
 const LOGO_URL = `/local/zendure-schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
@@ -36,11 +36,13 @@ const defineElement = (name, ctor) => {
     window.setTimeout(() => heal(`timer:${ms}ms`), ms);
   });
 };
-const MODES = ["off", "nom", "nom_o", "charge", "discharge"];
+const MODES = ["off", "nom", "nom_o", "nom_l", "charge", "discharge"];
+const SMART_SOC_MODES = ["nom", "nom_o", "nom_l"];
 const MODE_LABEL = {
   off: "Uit",
   nom: "NOM",
-  nom_o: "NOM-O",
+  nom_o: "Slim ontladen",
+  nom_l: "Slim laden",
   charge: "Laden",
   discharge: "Ontladen",
 };
@@ -48,6 +50,7 @@ const MODE_TO_CHAR = {
   off: "o",
   nom: "n",
   nom_o: "x",
+  nom_l: "l",
   charge: "c",
   discharge: "d",
 };
@@ -55,6 +58,7 @@ const CHAR_TO_MODE = {
   o: "off",
   n: "nom",
   x: "nom_o",
+  l: "nom_l",
   c: "charge",
   d: "discharge",
 };
@@ -73,8 +77,11 @@ const DEFAULTS = {
   default_discharge_soc: 10,
   nom_option: "smart",
   nom_o_option: "smart_discharging",
-  nom_o_label: "NOM-O",
-  nom_o_tag: "N-O",
+  nom_l_option: "smart_charging",
+  nom_o_label: "Slim ontladen",
+  nom_o_tag: "SLM-O",
+  nom_l_label: "Slim laden",
+  nom_l_tag: "SLM-L",
   // Laden/ontladen: operation = off, richting via ac_mode
   charge_mode_option: "off",
   discharge_mode_option: "off",
@@ -92,6 +99,7 @@ const DEFAULTS = {
   colors: {
     nom: "#1b8a3a",
     nom_o: "#00e5c0",
+    nom_l: "#3dd6a5",
     charge: "#3fb6ff",
     discharge: "#ff9800",
     current: "#eaf6ff",
@@ -313,7 +321,7 @@ class ZendureScheduleCard extends HTMLElement {
   }
 
   _defaultSocForMode(mode) {
-    if (mode === "charge" || mode === "nom" || mode === "nom_o") {
+    if (mode === "charge" || SMART_SOC_MODES.includes(mode)) {
       return this._defaultChargeSoc();
     }
     if (mode === "discharge") return this._defaultDischargeSoc();
@@ -321,7 +329,7 @@ class ZendureScheduleCard extends HTMLElement {
   }
 
   _defaultSocMinForMode(mode) {
-    if (mode === "nom" || mode === "nom_o") return this._defaultDischargeSoc();
+    if (SMART_SOC_MODES.includes(mode)) return this._defaultDischargeSoc();
     return 0;
   }
 
@@ -762,7 +770,8 @@ class ZendureScheduleCard extends HTMLElement {
           <div class="brush-row" role="toolbar" aria-label="Modus toekennen">
             <button type="button" class="brush is-muted" data-brush="off" disabled>Uit</button>
             <button type="button" class="brush is-muted" data-brush="nom" disabled>NOM</button>
-            <button type="button" class="brush is-muted" data-brush="nom_o" disabled>NOM-O</button>
+            <button type="button" class="brush is-muted" data-brush="nom_o" disabled>SLM-O</button>
+            <button type="button" class="brush is-muted" data-brush="nom_l" disabled>SLM-L</button>
             <button type="button" class="brush is-muted" data-brush="charge" disabled>Laden</button>
             <button type="button" class="brush is-muted" data-brush="discharge" disabled>Ontladen</button>
           </div>
@@ -801,7 +810,8 @@ class ZendureScheduleCard extends HTMLElement {
 
           <div class="legend">
             <span><i class="swatch nom"></i>NOM</span>
-            <span><i class="swatch nom_o"></i><span class="legend-nom-o">NOM-O</span></span>
+            <span><i class="swatch nom_o"></i><span class="legend-nom-o">SLM-O</span></span>
+            <span><i class="swatch nom_l"></i><span class="legend-nom-l">SLM-L</span></span>
             <span><i class="swatch charge"></i>Laden</span>
             <span><i class="swatch discharge"></i>Ontladen</span>
             <span><i class="swatch current"></i>Nu</span>
@@ -838,7 +848,9 @@ class ZendureScheduleCard extends HTMLElement {
       screen: card.querySelector(".screen"),
       brushes: Array.from(card.querySelectorAll(".brush")),
       brushNomO: card.querySelector('.brush[data-brush="nom_o"]'),
+      brushNomL: card.querySelector('.brush[data-brush="nom_l"]'),
       legendNomO: card.querySelector(".legend-nom-o"),
+      legendNomL: card.querySelector(".legend-nom-l"),
       editorPanel: card.querySelector(".editor-panel"),
       editorTitle: card.querySelector(".editor-title"),
       editorMode: card.querySelector(".editor-mode"),
@@ -1041,12 +1053,25 @@ class ZendureScheduleCard extends HTMLElement {
   _nomOTag() {
     const tag = String(this._config?.nom_o_tag ?? DEFAULTS.nom_o_tag)
       .trim()
-      .slice(0, 3);
+      .slice(0, 5);
     return tag || DEFAULTS.nom_o_tag;
+  }
+
+  _nomLLabel() {
+    const label = String(this._config?.nom_l_label ?? DEFAULTS.nom_l_label).trim();
+    return label || DEFAULTS.nom_l_label;
+  }
+
+  _nomLTag() {
+    const tag = String(this._config?.nom_l_tag ?? DEFAULTS.nom_l_tag)
+      .trim()
+      .slice(0, 5);
+    return tag || DEFAULTS.nom_l_tag;
   }
 
   _modeLabel(mode) {
     if (mode === "nom_o") return this._nomOLabel();
+    if (mode === "nom_l") return this._nomLLabel();
     return MODE_LABEL[mode] || mode;
   }
 
@@ -1058,6 +1083,7 @@ class ZendureScheduleCard extends HTMLElement {
       "mode-off",
       "mode-nom",
       "mode-nom_o",
+      "mode-nom_l",
       "mode-charge",
       "mode-discharge"
     );
@@ -1067,6 +1093,7 @@ class ZendureScheduleCard extends HTMLElement {
       off: "—",
       nom: "NOM",
       nom_o: this._nomOTag(),
+      nom_l: this._nomLTag(),
       charge: "IMP",
       discharge: "EXP",
     };
@@ -1127,10 +1154,12 @@ class ZendureScheduleCard extends HTMLElement {
     this._els.editorMode.dataset.mode = mode;
 
     const needsPower = mode === "charge" || mode === "discharge";
-    const isNom = mode === "nom";
-    const showSoc = this._showSoc() && (needsPower || isNom);
-    const showMaxSoc = showSoc && (mode === "charge" || isNom);
-    const showMinSoc = showSoc && (mode === "discharge" || isNom);
+    const isSmartSoc = SMART_SOC_MODES.includes(mode);
+    const showSoc = this._showSoc() && (needsPower || isSmartSoc);
+    const showMaxSoc =
+      showSoc && (mode === "charge" || isSmartSoc);
+    const showMinSoc =
+      showSoc && (mode === "discharge" || isSmartSoc);
 
     this._els.limitsWrap?.classList.toggle("hidden", !needsPower && !showSoc);
     this._els.powerWrap.classList.toggle("hidden", !needsPower);
@@ -1145,15 +1174,23 @@ class ZendureScheduleCard extends HTMLElement {
     this._els.socMaxWrap?.classList.toggle("hidden", !showMaxSoc);
     this._els.socMinWrap?.classList.toggle("hidden", !showMinSoc);
 
+    const smartAccent =
+      mode === "nom"
+        ? "var(--color-nom)"
+        : mode === "nom_o"
+          ? "var(--color-nom-o)"
+          : mode === "nom_l"
+            ? "var(--color-nom-l)"
+            : null;
+
     if (showMaxSoc) {
       const fallback = this._defaultSocForMode(mode);
       const soc = this._clampSoc(slot.soc, fallback);
       this._els.socMaxSlider.value = String(soc);
       this._els.socMaxValue.textContent = `${soc} %`;
       this._els.socMaxLabel.textContent = "Max SOC";
-      this._els.socMaxSlider.style.accentColor = isNom
-        ? "var(--color-nom)"
-        : "var(--color-charge)";
+      this._els.socMaxSlider.style.accentColor =
+        smartAccent || "var(--color-charge)";
     }
 
     if (showMinSoc) {
@@ -1168,9 +1205,8 @@ class ZendureScheduleCard extends HTMLElement {
       this._els.socMinSlider.value = String(soc);
       this._els.socMinValue.textContent = `${soc} %`;
       this._els.socMinLabel.textContent = "Min SOC";
-      this._els.socMinSlider.style.accentColor = isNom
-        ? "var(--color-nom)"
-        : "var(--color-discharge)";
+      this._els.socMinSlider.style.accentColor =
+        smartAccent || "var(--color-discharge)";
     }
   }
 
@@ -1179,6 +1215,10 @@ class ZendureScheduleCard extends HTMLElement {
     const c = this._config.colors;
     this._els.screen.style.setProperty("--color-nom", c.nom);
     this._els.screen.style.setProperty("--color-nom-o", c.nom_o || c.nom);
+    this._els.screen.style.setProperty(
+      "--color-nom-l",
+      c.nom_l || c.nom_o || c.nom
+    );
     this._els.screen.style.setProperty("--color-charge", c.charge);
     this._els.screen.style.setProperty("--color-discharge", c.discharge);
     this._els.screen.style.setProperty("--color-current", c.current);
@@ -1188,9 +1228,10 @@ class ZendureScheduleCard extends HTMLElement {
     this._els.toggleLabel.textContent = this._enabled ? "AAN" : "UIT";
     this._els.screen.classList.toggle("scheduler-off", !this._enabled);
 
-    const nomOLabel = this._nomOLabel();
-    if (this._els.brushNomO) this._els.brushNomO.textContent = nomOLabel;
-    if (this._els.legendNomO) this._els.legendNomO.textContent = nomOLabel;
+    if (this._els.brushNomO) this._els.brushNomO.textContent = this._nomOTag();
+    if (this._els.brushNomL) this._els.brushNomL.textContent = this._nomLTag();
+    if (this._els.legendNomO) this._els.legendNomO.textContent = this._nomOTag();
+    if (this._els.legendNomL) this._els.legendNomL.textContent = this._nomLTag();
     this._hourButtons?.forEach((_, h) => this._updateHourButton(h));
 
     const armed = this._hasSelection();
@@ -1251,6 +1292,7 @@ class ZendureScheduleCard extends HTMLElement {
         "external",
         "extern",
       ],
+      smart_charging: ["smart_charging", "smart charging"],
       off: ["off", "Off"],
       input: ["input", "Input", "charge"],
       output: ["output", "Output", "discharge"],
@@ -1275,10 +1317,13 @@ class ZendureScheduleCard extends HTMLElement {
     )
       .toLowerCase()
       .replace(/[\s-]+/g, "_");
+    const nomLOpt = String(this._config?.nom_l_option || "smart_charging")
+      .toLowerCase()
+      .replace(/[\s-]+/g, "_");
 
     if (s === nomOpt || s === "smart") return "NOM";
 
-    // NOM-O: geconfigureerde optie + gangbare Zendure-aliassen (o.a. external/extern)
+    // SLM-O: geconfigureerde optie + gangbare Zendure-aliassen (o.a. external/extern)
     if (
       s === nomOOpt ||
       s === "smart_discharging" ||
@@ -1287,7 +1332,15 @@ class ZendureScheduleCard extends HTMLElement {
       s === "extern" ||
       s.includes("extern")
     ) {
-      return this._nomOLabel();
+      return this._nomOTag();
+    }
+
+    if (
+      s === nomLOpt ||
+      s === "smart_charging" ||
+      s.includes("smart_charg")
+    ) {
+      return this._nomLTag();
     }
 
     if (s === "off") return "Off";
@@ -1302,11 +1355,10 @@ class ZendureScheduleCard extends HTMLElement {
       return;
     }
     const mode = this._prettyMode(st.state);
-    const nomOLabel = this._nomOLabel();
     const dir = this._hass.states[this._config.direction_entity]?.state;
     const dirLower = String(dir || "").toLowerCase();
-    let extra = "";
-    // Laden/ontladen draaien op operation=off + ac_mode
+    let text = mode;
+    // Laden/ontladen: operation=off + ac_mode — toon alleen laden/ontladen + W
     if (mode === "Off" && dir != null) {
       const isCharge =
         dirLower === "input" || dirLower === "charge";
@@ -1321,12 +1373,16 @@ class ZendureScheduleCard extends HTMLElement {
       const power = powerEntity
         ? this._hass.states[powerEntity]?.state
         : null;
-      extra = power != null ? ` · ${d} ${power}W` : ` · ${d}`;
+      text = power != null ? `${d} ${power}W` : String(d);
     }
-    this._els.modeValue.textContent = `${mode}${extra}`;
+    this._els.modeValue.textContent = text;
     this._els.modeValue.classList.toggle(
       "is-self",
-      mode === "NOM" || mode === nomOLabel
+      mode === "NOM" ||
+        mode === this._nomOTag() ||
+        mode === this._nomLTag() ||
+        mode === this._nomOLabel() ||
+        mode === this._nomLLabel()
     );
   }
 
@@ -1540,11 +1596,22 @@ class ZendureScheduleCard extends HTMLElement {
         return ok(`${summary} toegepast`);
       }
 
-      if (slot.mode === "nom_o") {
-        await this._selectOption(
-          this._config.entity,
-          this._config.nom_o_option || "smart_discharging"
+      if (SMART_SOC_MODES.includes(slot.mode) && slot.mode !== "nom") {
+        const opt =
+          slot.mode === "nom_o"
+            ? this._config.nom_o_option || "smart_discharging"
+            : this._config.nom_l_option || "smart_charging";
+        await this._selectOption(this._config.entity, opt);
+        const maxSoc = this._clampSoc(
+          slot.soc,
+          this._defaultSocForMode(slot.mode)
         );
+        const minSoc = this._clampSoc(
+          slot.soc_min,
+          this._defaultSocMinForMode(slot.mode)
+        );
+        await this._setNumber(this._chargeSocEntity(), maxSoc);
+        await this._setNumber(this._dischargeSocEntity(), minSoc);
         this._lastAppliedKey = key;
         return ok(`${summary} toegepast`);
       }
@@ -1661,8 +1728,8 @@ class ZendureScheduleCard extends HTMLElement {
         text-shadow: 0 0 8px rgba(76,175,80,0.55);
       }
       .brush-row {
-        display: grid; grid-template-columns: repeat(5, 1fr);
-        gap: 6px; margin-bottom: 12px;
+        display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 5px; margin-bottom: 12px;
       }
       .brush {
         appearance: none; border: 1px solid rgba(255,255,255,0.1);
@@ -1703,6 +1770,13 @@ class ZendureScheduleCard extends HTMLElement {
         border-color: color-mix(in srgb, var(--color-nom-o) 90%, transparent);
         background: color-mix(in srgb, var(--color-nom-o) 22%, transparent);
         box-shadow: 0 0 12px color-mix(in srgb, var(--color-nom-o) 40%, transparent);
+        opacity: 1;
+      }
+      .brush[data-brush="nom_l"].active {
+        color: #eafff6;
+        border-color: color-mix(in srgb, var(--color-nom-l) 90%, transparent);
+        background: color-mix(in srgb, var(--color-nom-l) 22%, transparent);
+        box-shadow: 0 0 12px color-mix(in srgb, var(--color-nom-l) 40%, transparent);
         opacity: 1;
       }
       .brush[data-brush="charge"].active {
@@ -1763,6 +1837,12 @@ class ZendureScheduleCard extends HTMLElement {
         background: color-mix(in srgb, var(--color-nom-o) 42%, transparent);
         box-shadow: 0 0 10px color-mix(in srgb, var(--color-nom-o) 40%, transparent);
       }
+      .hour.mode-nom_l {
+        color: #eafff6;
+        border-color: color-mix(in srgb, var(--color-nom-l) 90%, transparent);
+        background: color-mix(in srgb, var(--color-nom-l) 42%, transparent);
+        box-shadow: 0 0 10px color-mix(in srgb, var(--color-nom-l) 40%, transparent);
+      }
       .hour.mode-charge {
         color: #eaf6ff;
         border-color: color-mix(in srgb, var(--color-charge) 70%, transparent);
@@ -1795,6 +1875,7 @@ class ZendureScheduleCard extends HTMLElement {
       }
       .screen.scheduler-off .hour.mode-nom,
       .screen.scheduler-off .hour.mode-nom_o,
+      .screen.scheduler-off .hour.mode-nom_l,
       .screen.scheduler-off .hour.mode-charge,
       .screen.scheduler-off .hour.mode-discharge {
         opacity: 0.55; box-shadow: none;
@@ -1816,6 +1897,7 @@ class ZendureScheduleCard extends HTMLElement {
       }
       .editor-mode[data-mode="nom"] { color: var(--color-nom); }
       .editor-mode[data-mode="nom_o"] { color: var(--color-nom-o); }
+      .editor-mode[data-mode="nom_l"] { color: var(--color-nom-l); }
       .editor-mode[data-mode="charge"] { color: var(--color-charge); }
       .editor-mode[data-mode="discharge"] { color: var(--color-discharge); }
       .limits-wrap {
@@ -1839,6 +1921,7 @@ class ZendureScheduleCard extends HTMLElement {
       .swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
       .swatch.nom { background: var(--color-nom); box-shadow: 0 0 6px var(--color-nom); }
       .swatch.nom_o { background: var(--color-nom-o); box-shadow: 0 0 6px var(--color-nom-o); }
+      .swatch.nom_l { background: var(--color-nom-l); box-shadow: 0 0 6px var(--color-nom-l); }
       .swatch.charge { background: var(--color-charge); box-shadow: 0 0 6px var(--color-charge); }
       .swatch.discharge { background: var(--color-discharge); box-shadow: 0 0 6px var(--color-discharge); }
       .swatch.current { background: rgba(255,255,255,0.55); }
@@ -2016,9 +2099,12 @@ class ZendureScheduleEditor extends HTMLElement {
 
           <div class="section-title">Select-opties</div>
           <div class="row"><label>NOM (nom_option)</label><input type="text" data-key="nom_option" placeholder="smart"></div>
-          <div class="row"><label>NOM-O (nom_o_option)</label><input type="text" data-key="nom_o_option" placeholder="smart_discharging"></div>
-          <div class="row"><label>Tekst NOM-O (nom_o_label)</label><input type="text" data-key="nom_o_label" placeholder="NOM-O"></div>
-          <div class="row"><label>Tekst NOM-O-uurtegel (nom_o_tag, max 3)</label><input type="text" data-key="nom_o_tag" maxlength="3" placeholder="N-O"></div>
+          <div class="row"><label>SLM-O (nom_o_option)</label><input type="text" data-key="nom_o_option" placeholder="smart_discharging"></div>
+          <div class="row"><label>Tekst SLM-O (nom_o_label)</label><input type="text" data-key="nom_o_label" placeholder="Slim ontladen"></div>
+          <div class="row"><label>Tekst SLM-O-uurtegel (nom_o_tag, max 5)</label><input type="text" data-key="nom_o_tag" maxlength="5" placeholder="SLM-O"></div>
+          <div class="row"><label>SLM-L (nom_l_option)</label><input type="text" data-key="nom_l_option" placeholder="smart_charging"></div>
+          <div class="row"><label>Tekst SLM-L (nom_l_label)</label><input type="text" data-key="nom_l_label" placeholder="Slim laden"></div>
+          <div class="row"><label>Tekst SLM-L-uurtegel (nom_l_tag, max 5)</label><input type="text" data-key="nom_l_tag" maxlength="5" placeholder="SLM-L"></div>
           <div class="row"><label>Laden operation (charge_mode_option)</label><input type="text" data-key="charge_mode_option" placeholder="off"></div>
           <div class="row"><label>Ontladen operation (discharge_mode_option)</label><input type="text" data-key="discharge_mode_option" placeholder="off"></div>
           <div class="row"><label>Laden ac_mode (charge_option)</label><input type="text" data-key="charge_option" placeholder="input"></div>
@@ -2042,10 +2128,17 @@ class ZendureScheduleEditor extends HTMLElement {
             </div>
           </div>
           <div class="row">
-            <label>NOM-O</label>
+            <label>SLM-O</label>
             <div class="color-row">
               <input type="text" data-color="nom_o" placeholder="#00e5c0">
               <input type="color" data-color-picker="nom_o">
+            </div>
+          </div>
+          <div class="row">
+            <label>SLM-L</label>
+            <div class="color-row">
+              <input type="text" data-color="nom_l" placeholder="#3dd6a5">
+              <input type="color" data-color-picker="nom_l">
             </div>
           </div>
           <div class="row">
@@ -2089,6 +2182,8 @@ class ZendureScheduleEditor extends HTMLElement {
         "nom_option",
         "nom_o_option",
         "nom_o_label",
+        "nom_l_option",
+        "nom_l_label",
         "charge_mode_option",
         "discharge_mode_option",
         "charge_option",
@@ -2106,19 +2201,20 @@ class ZendureScheduleEditor extends HTMLElement {
         });
       });
 
-      const tagInput = this.querySelector('input[data-key="nom_o_tag"]');
-      if (tagInput) {
+      ["nom_o_tag", "nom_l_tag"].forEach((tagKey) => {
+        const tagInput = this.querySelector(`input[data-key="${tagKey}"]`);
+        if (!tagInput) return;
         tagInput.addEventListener("input", () => {
-          const clipped = String(tagInput.value || "").slice(0, 3);
+          const clipped = String(tagInput.value || "").slice(0, 5);
           if (tagInput.value !== clipped) tagInput.value = clipped;
-          this._updateConfig({ nom_o_tag: clipped });
+          this._updateConfig({ [tagKey]: clipped });
         });
         tagInput.addEventListener("change", () => {
-          const clipped = String(tagInput.value || "").trim().slice(0, 3);
+          const clipped = String(tagInput.value || "").trim().slice(0, 5);
           tagInput.value = clipped;
-          this._updateConfig({ nom_o_tag: clipped });
+          this._updateConfig({ [tagKey]: clipped });
         });
-      }
+      });
 
       const numberKeys = {
         default_power: 500,
@@ -2161,7 +2257,7 @@ class ZendureScheduleEditor extends HTMLElement {
         });
       });
 
-      ["nom", "nom_o", "charge", "discharge", "current", "idle"].forEach(
+      ["nom", "nom_o", "nom_l", "charge", "discharge", "current", "idle"].forEach(
         (colorKey) => {
           const text = this.querySelector(`input[data-color="${colorKey}"]`);
           const picker = this.querySelector(
@@ -2213,6 +2309,9 @@ class ZendureScheduleEditor extends HTMLElement {
       "nom_o_option",
       "nom_o_label",
       "nom_o_tag",
+      "nom_l_option",
+      "nom_l_label",
+      "nom_l_tag",
       "charge_mode_option",
       "discharge_mode_option",
       "charge_option",
@@ -2223,7 +2322,7 @@ class ZendureScheduleEditor extends HTMLElement {
       const input = this.querySelector(`input[data-key="${key}"]`);
       if (!input || this._isFocused(input)) return;
       let val = this._config[key] ?? "";
-      if (key === "nom_o_tag") val = String(val).slice(0, 3);
+      if (key === "nom_o_tag" || key === "nom_l_tag") val = String(val).slice(0, 5);
       if (input.value !== String(val)) input.value = val;
     });
 
@@ -2246,7 +2345,7 @@ class ZendureScheduleEditor extends HTMLElement {
       if (input.checked !== checked) input.checked = checked;
     });
 
-    ["nom", "nom_o", "charge", "discharge", "current", "idle"].forEach(
+    ["nom", "nom_o", "nom_l", "charge", "discharge", "current", "idle"].forEach(
       (colorKey) => {
         const text = this.querySelector(`input[data-color="${colorKey}"]`);
         const picker = this.querySelector(
@@ -2271,7 +2370,10 @@ class ZendureScheduleEditor extends HTMLElement {
     }
     Object.assign(raw, patch);
     if (raw.nom_o_tag != null) {
-      raw.nom_o_tag = String(raw.nom_o_tag).slice(0, 3);
+      raw.nom_o_tag = String(raw.nom_o_tag).slice(0, 5);
+    }
+    if (raw.nom_l_tag != null) {
+      raw.nom_l_tag = String(raw.nom_l_tag).slice(0, 5);
     }
     this._raw = raw;
     this._config = {

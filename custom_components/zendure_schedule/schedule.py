@@ -17,10 +17,10 @@ from .const import (
     MODE_CHARGE,
     MODE_DISCHARGE,
     MODE_NOM,
-    MODE_NOM_O,
     MODE_OFF,
     MODE_TO_CHAR,
     MODES,
+    SMART_SOC_MODES,
 )
 
 
@@ -34,7 +34,7 @@ def default_soc_for_mode(
         return int(charge_soc)
     if mode == MODE_DISCHARGE:
         return int(discharge_soc)
-    if mode in (MODE_NOM, MODE_NOM_O):
+    if mode in SMART_SOC_MODES:
         return int(charge_soc)
     return 0
 
@@ -44,7 +44,7 @@ def default_soc_min_for_mode(
     *,
     discharge_soc: int = DEFAULT_DISCHARGE_SOC,
 ) -> int:
-    if mode in (MODE_NOM, MODE_NOM_O):
+    if mode in SMART_SOC_MODES:
         return int(discharge_soc)
     return 0
 

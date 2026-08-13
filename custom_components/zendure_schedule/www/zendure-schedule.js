@@ -15,7 +15,7 @@ const TAG = "zendure-schedule";
 const EDITOR = "zendure-schedule-editor";
 const INNER = "zendure-schedule-inner";
 const EDITOR_INNER = "zendure-schedule-editor-inner";
-const VERSION = "1.0.40";
+const VERSION = "1.0.41";
 const CARD_URL = new URL(
   `./zendure-schedule-card.js?v=${VERSION}`,
   import.meta.url
@@ -249,7 +249,7 @@ if (!window.customCards.some((c) => c.type === TAG)) {
     type: TAG,
     name: "Zendure Schedule",
     description:
-      "Integratie-card: 24u NOM / NOM-O / laden / ontladen. Werkt zonder community resource.",
+      "Integratie-card: 24u NOM / SLM-O / SLM-L / laden / ontladen. Werkt zonder community resource.",
     preview: true,
   });
 }

@@ -12,6 +12,7 @@ CONF_CHARGE_SOC_ENTITY = "charge_soc_entity"
 CONF_DISCHARGE_SOC_ENTITY = "discharge_soc_entity"
 CONF_NOM_OPTION = "nom_option"
 CONF_NOM_O_OPTION = "nom_o_option"
+CONF_NOM_L_OPTION = "nom_l_option"
 CONF_CHARGE_MODE_OPTION = "charge_mode_option"
 CONF_DISCHARGE_MODE_OPTION = "discharge_mode_option"
 CONF_CHARGE_OPTION = "charge_option"
@@ -30,6 +31,7 @@ MANUFACTURER = "Energienerds.nl"
 MODEL = "Zendure Schedule"
 DEFAULT_NOM_OPTION = "smart"
 DEFAULT_NOM_O_OPTION = "smart_discharging"
+DEFAULT_NOM_L_OPTION = "smart_charging"
 DEFAULT_CHARGE_MODE_OPTION = "off"
 DEFAULT_DISCHARGE_MODE_OPTION = "off"
 DEFAULT_CHARGE_OPTION = "input"
@@ -45,14 +47,26 @@ DEFAULT_DISCHARGE_SOC = 10
 MODE_OFF = "off"
 MODE_NOM = "nom"
 MODE_NOM_O = "nom_o"
+MODE_NOM_L = "nom_l"
 MODE_CHARGE = "charge"
 MODE_DISCHARGE = "discharge"
-MODES = (MODE_OFF, MODE_NOM, MODE_NOM_O, MODE_CHARGE, MODE_DISCHARGE)
+MODES = (
+    MODE_OFF,
+    MODE_NOM,
+    MODE_NOM_O,
+    MODE_NOM_L,
+    MODE_CHARGE,
+    MODE_DISCHARGE,
+)
+
+# Smart-modi met max/min SOC (geen vast vermogen).
+SMART_SOC_MODES = (MODE_NOM, MODE_NOM_O, MODE_NOM_L)
 
 MODE_TO_CHAR = {
     MODE_OFF: "o",
     MODE_NOM: "n",
     MODE_NOM_O: "x",
+    MODE_NOM_L: "l",
     MODE_CHARGE: "c",
     MODE_DISCHARGE: "d",
 }
@@ -61,7 +75,8 @@ CHAR_TO_MODE = {v: k for k, v in MODE_TO_CHAR.items()}
 MODE_LABEL = {
     MODE_OFF: "Uit",
     MODE_NOM: "NOM",
-    MODE_NOM_O: "NOM-O",
+    MODE_NOM_O: "Slim ontladen",
+    MODE_NOM_L: "Slim laden",
     MODE_CHARGE: "Laden",
     MODE_DISCHARGE: "Ontladen",
 }

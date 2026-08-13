@@ -6,7 +6,7 @@
 
 <p align="center">
   Home Assistant-integratie van <a href="https://energienerds.nl/">Energienerds.nl</a><br>
-  24u-planner voor Zendure: NOM / NOM-O / laden / ontladen
+  24u-planner voor Zendure: NOM / SLM-O / SLM-L / laden / ontladen
 </p>
 
 <p align="center">
@@ -16,7 +16,7 @@
 
 ---
 
-Zelfstandige custom integration met 24u-planner voor Zendure (NOM / NOM-O / laden / ontladen).
+Zelfstandige custom integration met 24u-planner voor Zendure (NOM / SLM-O / SLM-L / laden / ontladen).
 
 - Eigen Lovelace-card (automatisch geladen) — **geen** community/`www/community` resource nodig
 - Backend past elk uur toe — geen aparte automation of `input_text`-helper nodig
@@ -84,8 +84,11 @@ power_entity: ""
 show_soc: true
 nom_option: smart
 nom_o_option: smart_discharging
-nom_o_label: NOM-O
-nom_o_tag: N-O
+nom_o_label: Slim ontladen
+nom_o_tag: SLM-O
+nom_l_option: smart_charging
+nom_l_label: Slim laden
+nom_l_tag: SLM-L
 charge_mode_option: "off"
 discharge_mode_option: "off"
 charge_option: input
@@ -99,6 +102,7 @@ default_discharge_soc: 10
 colors:
   nom: "#1b8a3a"
   nom_o: "#00e5c0"
+  nom_l: "#3dd6a5"
   charge: "#3fb6ff"
   discharge: "#ff9800"
   current: "#eaf6ff"
@@ -118,7 +122,7 @@ Alle velden zijn ook bewerkbaar in de visuele HA-card-editor (inclusief color pi
 | `direction_entity` | entity_id | *(uit integratie)* | AC-mode select (`input` / `output`) |
 | `charge_power_entity` | entity_id | *(uit integratie)* | Number-entity voor laadvermogen |
 | `discharge_power_entity` | entity_id | *(uit integratie)* | Number-entity voor ontlaadvermogen |
-| `show_soc` | bool | `true` | SOC weergeven: bij laden/ontladen één slider; bij NOM Max + Min SOC |
+| `show_soc` | bool | `true` | SOC weergeven: bij laden/ontladen één slider; bij NOM/SLM-O/SLM-L Max + Min SOC |
 | `charge_soc_entity` | entity_id | *(uit integratie)* | Number-entity max SOC bij laden (bijv. `soc_set`) |
 | `discharge_soc_entity` | entity_id | *(uit integratie)* | Number-entity min SOC bij ontladen (bijv. `min_soc`) |
 | `default_charge_soc` | number | `100` | Standaard max SOC (%) bij nieuwe laaduren |
@@ -126,9 +130,12 @@ Alle velden zijn ook bewerkbaar in de visuele HA-card-editor (inclusief color pi
 | `storage_entity` | entity_id | *(auto)* | Text/input_text met compact schema; leeg = automatisch zoeken |
 | `power_entity` | entity_id | `""` | Legacy fallback als charge/discharge-power niet gezet zijn |
 | `nom_option` | string | `smart` | Option-waarde op `entity` voor NOM |
-| `nom_o_option` | string | `smart_discharging` | Option-waarde voor NOM-O |
-| `nom_o_label` | string | `NOM-O` | Knop-/legendatekst voor NOM-O in de card |
-| `nom_o_tag` | string | `N-O` | Korte tekst op NOM-O-uurtegels (max 3 tekens) |
+| `nom_o_option` | string | `smart_discharging` | Option-waarde voor SLM-O |
+| `nom_o_label` | string | `Slim ontladen` | Volledige tekst voor SLM-O (info-paneel) |
+| `nom_o_tag` | string | `SLM-O` | Korte tekst op knoppen/uurtegels (max 5) |
+| `nom_l_option` | string | `smart_charging` | Option-waarde voor SLM-L |
+| `nom_l_label` | string | `Slim laden` | Volledige tekst voor SLM-L (info-paneel) |
+| `nom_l_tag` | string | `SLM-L` | Korte tekst op knoppen/uurtegels (max 5) |
 | `charge_mode_option` | string | `off` | Operation-waarde bij laden |
 | `discharge_mode_option` | string | `off` | Operation-waarde bij ontladen |
 | `charge_option` | string | `input` | AC-mode waarde bij laden |
@@ -139,7 +146,8 @@ Alle velden zijn ook bewerkbaar in de visuele HA-card-editor (inclusief color pi
 | `min_power` | number | `0` | Minimum van de vermogensslider |
 | `power_step` | number | `50` | Stap van de vermogensslider (alleen UI; wordt **niet** gebruikt om af te ronden bij toepassen) |
 | `colors.nom` | hex | `#1b8a3a` | Kleur NOM |
-| `colors.nom_o` | hex | `#00e5c0` | Kleur NOM-O |
+| `colors.nom_o` | hex | `#00e5c0` | Kleur SLM-O |
+| `colors.nom_l` | hex | `#3dd6a5` | Kleur SLM-L |
 | `colors.charge` | hex | `#3fb6ff` | Kleur laden |
 | `colors.discharge` | hex | `#ff9800` | Kleur ontladen |
 | `colors.current` | hex | `#eaf6ff` | Accent huidig uur |
@@ -167,7 +175,8 @@ Lege entity-velden (`""` of weggelaten) betekenen: gebruik de entities uit de **
 ## Gedrag
 
 - **NOM** → operation = `smart` (`nom_option`) + max SOC + min SOC
-- **NOM-O** → operation = `smart_discharging` (`nom_o_option`)
+- **SLM-O** (Slim ontladen) → operation = `smart_discharging` (`nom_o_option`) + max SOC + min SOC
+- **SLM-L** (Slim laden) → operation = `smart_charging` (`nom_l_option`) + max SOC + min SOC
 - **Laden** → operation `off` + ac_mode `input` + charge power; discharge power = `0`
 - **Ontladen** → operation `off` + ac_mode `output` + discharge power; charge power = `0`
 - **Uit** → operation = `off` (`off_option`) + charge + discharge power = `0`
