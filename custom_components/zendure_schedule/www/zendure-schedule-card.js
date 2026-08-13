@@ -3,7 +3,7 @@
  * Do not register this file as a Lovelace resource; use the stub instead.
  */
 
-const CARD_VERSION = "1.0.38";
+const CARD_VERSION = "1.0.39";
 const LOGO_URL = `/local/zendure-schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
@@ -749,15 +749,16 @@ class ZendureScheduleCard extends HTMLElement {
             <span><i class="swatch current"></i>Nu</span>
           </div>
 
-          <div class="actions">
-            <button type="button" data-action="all-nom">Alles NOM</button>
-            <button type="button" data-action="all-off">Alles uit</button>
-            <button type="button" class="apply-now-btn" data-action="apply-now">Nu toepassen</button>
-          </div>
-
-          <div class="footer-bar">
-            <button type="button" class="selection-clear hidden" data-action="clear-selection">Wis selectie</button>
-            <span class="selection-count" aria-live="polite">0 geselecteerd</span>
+          <div class="actions-row">
+            <div class="actions">
+              <button type="button" data-action="all-nom">Alles NOM</button>
+              <button type="button" data-action="all-off">Alles uit</button>
+              <button type="button" class="apply-now-btn" data-action="apply-now">Nu toepassen</button>
+            </div>
+            <div class="footer-bar">
+              <button type="button" class="selection-clear hidden" data-action="clear-selection">Wis selectie</button>
+              <span class="selection-count" aria-live="polite">0 geselecteerd</span>
+            </div>
           </div>
         </div>
       </div>
@@ -1657,10 +1658,16 @@ class ZendureScheduleCard extends HTMLElement {
         background: rgba(255,255,255,0.03);
         box-shadow: none;
         opacity: 1;
+        font-weight: 500;
+        text-shadow: none;
         cursor: default;
       }
       .brush-row.has-selection .brush:not(:disabled) {
-        color: #9fc4d6;
+        color: #f3fbff;
+        font-weight: 700;
+        font-size: 12px;
+        letter-spacing: 0.4px;
+        text-shadow: 0 0 10px rgba(234,246,255,0.45);
         opacity: 1;
         cursor: pointer;
       }
@@ -1810,13 +1817,23 @@ class ZendureScheduleCard extends HTMLElement {
       .swatch.charge { background: var(--color-charge); box-shadow: 0 0 6px var(--color-charge); }
       .swatch.discharge { background: var(--color-discharge); box-shadow: 0 0 6px var(--color-discharge); }
       .swatch.current { background: rgba(255,255,255,0.55); }
-      .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
-      .actions button {
+      .actions-row {
+        display: flex; align-items: flex-start; justify-content: space-between;
+        gap: 12px; margin-top: 14px;
+      }
+      .actions {
+        display: flex; flex-wrap: wrap; gap: 8px; margin-top: 0;
+        min-width: 0;
+      }
+      .actions button,
+      .selection-clear {
         appearance: none; border: 1px solid rgba(63,182,255,0.28);
         background: rgba(63,182,255,0.08); color: #d8e6ee;
-        border-radius: 8px; padding: 7px 12px; font-size: 12px; cursor: pointer;
+        border-radius: 8px; padding: 7px 12px; font-size: 12px;
+        line-height: 1.2; cursor: pointer; box-sizing: border-box;
       }
-      .actions button:hover {
+      .actions button:hover,
+      .selection-clear:hover {
         background: rgba(63,182,255,0.16); border-color: rgba(63,182,255,0.5);
       }
       .actions button:disabled { opacity: 0.75; cursor: default; }
@@ -1836,20 +1853,13 @@ class ZendureScheduleCard extends HTMLElement {
       }
       .footer-bar {
         display: flex; flex-direction: column; align-items: flex-end;
-        gap: 8px; margin-top: 12px;
-      }
-      .selection-clear {
-        appearance: none; border: 1px solid rgba(63,182,255,0.28);
-        background: rgba(63,182,255,0.08); color: #d8e6ee;
-        border-radius: 8px; padding: 7px 12px; font-size: 12px; cursor: pointer;
-      }
-      .selection-clear:hover {
-        background: rgba(63,182,255,0.16); border-color: rgba(63,182,255,0.5);
+        gap: 8px; margin-top: 0; flex-shrink: 0;
       }
       .selection-clear.hidden { display: none; }
       .selection-count {
         color: #7fa6b8; font-size: 15px; font-weight: 600;
         letter-spacing: 0.5px; font-variant-numeric: tabular-nums;
+        text-align: right;
       }
       .selection-count.has-selection { color: #eaf6ff; }
     `;
