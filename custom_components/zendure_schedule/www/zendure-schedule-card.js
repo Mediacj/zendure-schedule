@@ -3,7 +3,7 @@
  * Do not register this file as a Lovelace resource; use the stub instead.
  */
 
-const CARD_VERSION = "1.0.39";
+const CARD_VERSION = "1.0.40";
 const LOGO_URL = `/local/zendure-schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
@@ -127,6 +127,9 @@ class ZendureScheduleCard extends HTMLElement {
       this._enabled =
         this._loadEnabled() ??
         (this._config.enabled !== undefined ? !!this._config.enabled : true);
+      this._savedScheduleSig = this._scheduleSignature();
+      this._dirty = false;
+      this._localEditPending = false;
 
       if (!this._built) {
         this._buildDom();
@@ -424,6 +427,60 @@ class ZendureScheduleCard extends HTMLElement {
     this._queueStorageWrite();
   }
 
+  /** Alleen schema (geen enabled) — voor dirty-detectie. */
+  _scheduleSignature() {
+    if (!this._schedule) return "";
+    const m = this._schedule
+      .map((s) => MODE_TO_CHAR[s.mode] || "o")
+      .join("");
+    const p = this._schedule
+      .map((s) => {
+        const watts = Math.max(0, Math.min(9999, Math.round(s.power || 0)));
+        return String(watts).padStart(4, "0");
+      })
+      .join("");
+    const parts = [`m=${m}`, `p=${p}`];
+    const socs = this._schedule.map((slot) =>
+      this._clampSoc(slot.soc, this._defaultSocForMode(slot.mode))
+    );
+    const mins = this._schedule.map((slot) =>
+      this._clampSoc(slot.soc_min, this._defaultSocMinForMode(slot.mode))
+    );
+    const socCustom = this._schedule.some(
+      (slot, i) => socs[i] !== this._defaultSocForMode(slot.mode)
+    );
+    const minCustom = this._schedule.some(
+      (slot, i) => mins[i] !== this._defaultSocMinForMode(slot.mode)
+    );
+    if (socCustom) {
+      parts.push(`s=${socs.map((v) => String(v).padStart(2, "0")).join("")}`);
+    }
+    if (minCustom) {
+      parts.push(`n=${mins.map((v) => String(v).padStart(2, "0")).join("")}`);
+    }
+    return parts.join(";");
+  }
+
+  _refreshDirty() {
+    const sig = this._scheduleSignature();
+    this._dirty = sig !== (this._savedScheduleSig || "");
+    this._localEditPending = !!this._dirty;
+  }
+
+  /** Lokale schema-wijziging: nog niet opslaan/toepassen tot OK. */
+  _stageScheduleChange() {
+    this._refreshDirty();
+    this._renderHours();
+    this._syncChrome();
+    this._renderEditorPanel();
+  }
+
+  _captureSavedSchedule() {
+    this._savedScheduleSig = this._scheduleSignature();
+    this._dirty = false;
+    this._localEditPending = false;
+  }
+
   /** Compact ≤255: e=1;m=24;p=96digits[;s=48][;n=48] (legacy comma-lists OK). */
   _serializeCompact() {
     this._syncEnabledFromHass();
@@ -621,6 +678,7 @@ class ZendureScheduleCard extends HTMLElement {
     } catch (_e) {
       /* ignore */
     }
+    this._captureSavedSchedule();
     this._renderHours();
     this._syncChrome();
     this._renderEditorPanel();
@@ -753,11 +811,10 @@ class ZendureScheduleCard extends HTMLElement {
             <div class="actions">
               <button type="button" data-action="all-nom">Alles NOM</button>
               <button type="button" data-action="all-off">Alles uit</button>
-              <button type="button" class="apply-now-btn" data-action="apply-now">Nu toepassen</button>
+              <button type="button" class="ok-btn hidden" data-action="save-ok">OK</button>
             </div>
             <div class="footer-bar">
               <button type="button" class="selection-clear hidden" data-action="clear-selection">Wis selectie</button>
-              <span class="selection-count" aria-live="polite">0 geselecteerd</span>
             </div>
           </div>
         </div>
@@ -797,9 +854,8 @@ class ZendureScheduleCard extends HTMLElement {
       socMinSlider: card.querySelector(".soc-min-slider"),
       socMinLabel: card.querySelector(".soc-min-label"),
       socMinValue: card.querySelector(".soc-min-value"),
-      applyBtn: card.querySelector(".apply-now-btn"),
+      applyBtn: card.querySelector(".ok-btn"),
       brushRow: card.querySelector(".brush-row"),
-      selectionCount: card.querySelector(".selection-count"),
       selectionClear: card.querySelector(".selection-clear"),
     };
 
@@ -822,12 +878,7 @@ class ZendureScheduleCard extends HTMLElement {
         this._schedule[h].power = power;
         this._updateHourButton(h);
       }
-      this._persist();
-    });
-    this._els.powerSlider.addEventListener("change", () => {
-      if (!this._hasSelection()) return;
-      const now = new Date().getHours();
-      if (this._selectedHours.has(now)) this._requestBackendApply();
+      this._stageScheduleChange();
     });
 
     this._els.socMaxSlider.addEventListener("input", () => {
@@ -843,12 +894,7 @@ class ZendureScheduleCard extends HTMLElement {
       for (const h of this._selectedHours) {
         this._schedule[h].soc = soc;
       }
-      this._persist();
-    });
-    this._els.socMaxSlider.addEventListener("change", () => {
-      if (!this._hasSelection()) return;
-      const now = new Date().getHours();
-      if (this._selectedHours.has(now)) this._requestBackendApply();
+      this._stageScheduleChange();
     });
 
     this._els.socMinSlider.addEventListener("input", () => {
@@ -868,12 +914,7 @@ class ZendureScheduleCard extends HTMLElement {
         if (isDischarge) this._schedule[h].soc = soc;
         else this._schedule[h].soc_min = soc;
       }
-      this._persist();
-    });
-    this._els.socMinSlider.addEventListener("change", () => {
-      if (!this._hasSelection()) return;
-      const now = new Date().getHours();
-      if (this._selectedHours.has(now)) this._requestBackendApply();
+      this._stageScheduleChange();
     });
 
     card.querySelectorAll("[data-action]").forEach((btn) => {
@@ -885,13 +926,13 @@ class ZendureScheduleCard extends HTMLElement {
             this._normalizeSlot({ mode: "nom", power })
           );
           this._clearSelection();
-          this._afterScheduleEdit();
+          this._stageScheduleChange();
         } else if (action === "all-off") {
           this._schedule = Array.from({ length: 24 }, () => this._defaultSlot());
           this._clearSelection();
-          this._afterScheduleEdit();
-        } else if (action === "apply-now") {
-          this._onApplyNowClick();
+          this._stageScheduleChange();
+        } else if (action === "save-ok") {
+          this._onOkClick();
         } else if (action === "clear-selection") {
           this._clearSelection();
           this._syncChrome();
@@ -914,11 +955,7 @@ class ZendureScheduleCard extends HTMLElement {
   }
 
   _afterScheduleEdit() {
-    this._persist();
-    this._renderHours();
-    this._syncChrome();
-    this._renderEditorPanel();
-    this._requestBackendApply();
+    this._stageScheduleChange();
   }
 
   _hasSelection() {
@@ -967,16 +1004,10 @@ class ZendureScheduleCard extends HTMLElement {
   _assignModeToSelection(mode) {
     if (!this._hasSelection() || !MODES.includes(mode)) return;
     this._activeMode = mode;
-    const now = new Date().getHours();
-    let touchNow = false;
     for (const h of this._selectedHours) {
       this._applyModeToHour(h, mode);
-      if (h === now) touchNow = true;
     }
-    this._persist();
-    this._syncChrome();
-    this._renderEditorPanel();
-    if (touchNow) this._requestBackendApply();
+    this._stageScheduleChange();
   }
 
   _renderHours() {
@@ -1074,11 +1105,11 @@ class ZendureScheduleCard extends HTMLElement {
 
     if (hours.length === 1) {
       const h = hours[0];
-      this._els.editorTitle.textContent = `Uur ${String(h).padStart(2, "0")}–${String(
+      this._els.editorTitle.innerHTML = `Uur ${String(h).padStart(2, "0")}–${String(
         (h + 1) % 24
       ).padStart(2, "0")}`;
     } else {
-      this._els.editorTitle.textContent = `${hours.length} uren geselecteerd`;
+      this._els.editorTitle.innerHTML = `<strong>${hours.length} uren geselecteerd</strong>`;
     }
 
     if (!mode) {
@@ -1117,7 +1148,6 @@ class ZendureScheduleCard extends HTMLElement {
     if (showMaxSoc) {
       const fallback = this._defaultSocForMode(mode);
       const soc = this._clampSoc(slot.soc, fallback);
-      for (const h of hours) this._schedule[h].soc = soc;
       this._els.socMaxSlider.value = String(soc);
       this._els.socMaxValue.textContent = `${soc} %`;
       this._els.socMaxLabel.textContent = "Max SOC";
@@ -1135,10 +1165,6 @@ class ZendureScheduleCard extends HTMLElement {
         mode === "discharge"
           ? this._clampSoc(slot.soc, fallback)
           : this._clampSoc(slot.soc_min, fallback);
-      for (const h of hours) {
-        if (mode === "discharge") this._schedule[h].soc = soc;
-        else this._schedule[h].soc_min = soc;
-      }
       this._els.socMinSlider.value = String(soc);
       this._els.socMinValue.textContent = `${soc} %`;
       this._els.socMinLabel.textContent = "Min SOC";
@@ -1178,13 +1204,9 @@ class ZendureScheduleCard extends HTMLElement {
       );
     });
 
-    const count = this._selectedHours?.size || 0;
-    if (this._els.selectionCount) {
-      this._els.selectionCount.textContent =
-        count === 1 ? "1 geselecteerd" : `${count} geselecteerd`;
-      this._els.selectionCount.classList.toggle("has-selection", count > 0);
-    }
-    this._els.selectionClear?.classList.toggle("hidden", count === 0);
+    this._refreshDirty();
+    this._els.applyBtn?.classList.toggle("hidden", !this._dirty);
+    this._els.selectionClear?.classList.toggle("hidden", !armed);
 
     this._renderNextMode();
   }
@@ -1383,8 +1405,8 @@ class ZendureScheduleCard extends HTMLElement {
     }
   }
 
-  async _onApplyNowClick() {
-    if (this._applyBusy) return;
+  async _onOkClick() {
+    if (this._applyBusy || !this._dirty) return;
     this._applyBusy = true;
     const btn = this._els?.applyBtn;
     if (btn) {
@@ -1396,14 +1418,11 @@ class ZendureScheduleCard extends HTMLElement {
     let ok = false;
     try {
       this._syncEnabledFromHass();
-      if (!this._enabled) {
-        ok = true;
-      } else {
-        await this._requestBackendApply();
-        ok = true;
-      }
+      await this._requestBackendApply();
+      this._captureSavedSchedule();
+      ok = true;
     } catch (err) {
-      console.error("Zendure Schedule Card: apply-now failed", err);
+      console.error("Zendure Schedule Card: OK opslaan mislukt", err);
       ok = false;
     }
 
@@ -1417,9 +1436,10 @@ class ZendureScheduleCard extends HTMLElement {
       if (btn) {
         btn.disabled = false;
         btn.classList.remove("is-busy", "is-ok", "is-error");
-        btn.textContent = "Nu toepassen";
+        btn.textContent = "OK";
       }
       this._applyBusy = false;
+      this._syncChrome();
     }, 900);
   }
 
@@ -1789,6 +1809,11 @@ class ZendureScheduleCard extends HTMLElement {
         display: flex; justify-content: space-between; align-items: center;
         margin-bottom: 8px; color: #d8e6ee; font-size: 12px;
       }
+      .editor-title strong {
+        font-weight: 700;
+        color: #eaf6ff;
+        font-size: 13px;
+      }
       .editor-mode[data-mode="nom"] { color: var(--color-nom); }
       .editor-mode[data-mode="nom_o"] { color: var(--color-nom-o); }
       .editor-mode[data-mode="charge"] { color: var(--color-charge); }
@@ -1837,31 +1862,26 @@ class ZendureScheduleCard extends HTMLElement {
         background: rgba(63,182,255,0.16); border-color: rgba(63,182,255,0.5);
       }
       .actions button:disabled { opacity: 0.75; cursor: default; }
-      .actions button.apply-now-btn.is-busy {
+      .actions button.ok-btn.is-busy {
         border-color: rgba(63,182,255,0.65);
         background: rgba(63,182,255,0.18);
       }
-      .actions button.apply-now-btn.is-ok {
+      .actions button.ok-btn.is-ok {
         border-color: rgba(76,175,80,0.7);
         background: rgba(76,175,80,0.28);
         color: #eaffef;
       }
-      .actions button.apply-now-btn.is-error {
+      .actions button.ok-btn.is-error {
         border-color: rgba(244,67,54,0.7);
         background: rgba(244,67,54,0.18);
         color: #ffebee;
       }
+      .actions button.ok-btn.hidden { display: none; }
       .footer-bar {
         display: flex; flex-direction: column; align-items: flex-end;
         gap: 8px; margin-top: 0; flex-shrink: 0;
       }
       .selection-clear.hidden { display: none; }
-      .selection-count {
-        color: #7fa6b8; font-size: 15px; font-weight: 600;
-        letter-spacing: 0.5px; font-variant-numeric: tabular-nums;
-        text-align: right;
-      }
-      .selection-count.has-selection { color: #eaf6ff; }
     `;
   }
 }
