@@ -1,7 +1,8 @@
 """Serve and register the Lovelace card via /local/ (HACS-style).
 
-Single module: zendure-schedule.js (full card). Keeps a light customElements
-heal for HA 2026.8 scoped-registry race (frontend#52960).
+Single module via extra_module_url only — geen aparte Lovelace-resource,
+anders laadt de browser de card dubbel (edit-pennetje/race).
+Keeps a light customElements heal for HA 2026.8 (frontend#52960).
 """
 
 from __future__ import annotations
@@ -87,8 +88,19 @@ def _copy_card_to_local_www(hass: HomeAssistant, src_www: Path) -> Path | None:
         return None
 
 
+def _is_zendure_resource_url(url: str) -> bool:
+    path = str(url or "").split("?", 1)[0]
+    return (
+        path == LOCAL_URL_PATH
+        or path == LEGACY_URL_PATH
+        or path.endswith(f"/{CARD_FILENAME}")
+        or path.endswith("/zendure-schedule-card.js")
+        or "zendure-schedule" in path
+    )
+
+
 async def async_register_frontend(hass: HomeAssistant) -> None:
-    """Register static paths, /local/ copy, extra module url and Lovelace resource."""
+    """Register static paths, /local/ copy and extra_module_url (once)."""
     if hass.data.get(_DATA_FRONTEND):
         return
 
@@ -115,39 +127,31 @@ async def async_register_frontend(hass: HomeAssistant) -> None:
     )
     primary_url = CARD_URL if local_dir is not None else LEGACY_URL
 
-    # 3) Full card module.
+    # 3) Eén load-pad: extra_module_url (geen Lovelace-resource ernaast).
     _add_frontend_url(hass, primary_url)
 
-    # 4) Lovelace resource (storage mode).
-    hass.async_create_task(
-        _async_ensure_lovelace_resource(hass, primary_url=primary_url)
-    )
+    # 4) Oude dashboard-resources opruimen die een tweede load veroorzaken.
+    hass.async_create_task(_async_remove_lovelace_resources(hass))
 
     hass.data[_DATA_FRONTEND] = True
     _LOGGER.info(
-        "Zendure Schedule card op %s (local copy: %s)",
+        "Zendure Schedule card op %s via extra_module_url (local copy: %s)",
         primary_url,
         local_dir is not None,
     )
 
 
-async def _async_ensure_lovelace_resource(
-    hass: HomeAssistant, *, primary_url: str
-) -> None:
-    """Ensure one Lovelace module resource points at the card (/local/ preferred)."""
-
-    primary_path = primary_url.split("?", 1)[0]
+async def _async_remove_lovelace_resources(hass: HomeAssistant) -> None:
+    """Remove Lovelace module resources for this card (extra_module_url is enough)."""
 
     def _retry_later() -> None:
         @callback
         def _schedule(_: Any) -> None:
-            hass.async_create_task(
-                _async_ensure_lovelace_resource(hass, primary_url=primary_url)
-            )
+            hass.async_create_task(_async_remove_lovelace_resources(hass))
 
         async_call_later(hass, 5, _schedule)
 
-    async def _try_register() -> None:
+    async def _try_remove() -> None:
         lovelace = hass.data.get("lovelace")
         if lovelace is None:
             _retry_later()
@@ -156,8 +160,7 @@ async def _async_ensure_lovelace_resource(
         resources = getattr(lovelace, "resources", None)
         if resources is None:
             _LOGGER.debug(
-                "Geen Lovelace resources (YAML-mode) — card via extra_module_url: %s",
-                primary_url,
+                "Geen Lovelace resources (YAML-mode) — alleen extra_module_url"
             )
             return
 
@@ -174,57 +177,36 @@ async def _async_ensure_lovelace_resource(
             _LOGGER.debug("Kon Lovelace resources niet uitlezen", exc_info=True)
             return
 
-        matches = []
+        removed = 0
         for item in items:
-            url = str(item.get("url", ""))
-            path = url.split("?", 1)[0]
-            if (
-                path == primary_path
-                or path == LEGACY_URL_PATH
-                or path == LOCAL_URL_PATH
-                or path.endswith(f"/{CARD_FILENAME}")
-                or path.endswith("/zendure-schedule-card.js")
-                or "zendure-schedule" in path
-            ):
-                matches.append(item)
-
-        try:
-            if not matches:
-                await resources.async_create_item(
-                    {"res_type": "module", "url": primary_url}
+            if not _is_zendure_resource_url(str(item.get("url", ""))):
+                continue
+            try:
+                await resources.async_delete_item(item["id"])
+                removed += 1
+                _LOGGER.info(
+                    "Dubbele Zendure Lovelace-resource verwijderd: %s",
+                    item.get("url"),
                 )
-                _LOGGER.info("Lovelace resource toegevoegd: %s", primary_url)
-                return
-
-            primary = matches[0]
-            if primary.get("url") != primary_url:
-                await resources.async_update_item(
-                    primary["id"],
-                    {"res_type": "module", "url": primary_url},
+            except Exception:  # noqa: BLE001
+                _LOGGER.warning(
+                    "Kon Lovelace-resource niet verwijderen: %s "
+                    "(verwijder handmatig onder Dashboard → Bronnen)",
+                    item.get("url"),
+                    exc_info=True,
                 )
-                _LOGGER.info("Lovelace resource bijgewerkt: %s", primary_url)
 
-            for dup in matches[1:]:
-                # Niet verwijderen: delete tijdens startup veroorzaakt races.
-                _LOGGER.debug(
-                    "Extra Zendure Lovelace resource blijft staan: %s",
-                    dup.get("url"),
-                )
-        except Exception:  # noqa: BLE001
-            _LOGGER.warning(
-                "Kon Lovelace resource niet registreren; voeg handmatig toe: %s",
-                primary_url,
-                exc_info=True,
+        if removed:
+            _LOGGER.info(
+                "Zendure Schedule: %s dubbele resource(s) opgeruimd", removed
             )
 
     if hass.is_running:
-        await _try_register()
+        await _try_remove()
     else:
 
         @callback
         def _on_started(_: Any) -> None:
-            hass.async_create_task(
-                _async_ensure_lovelace_resource(hass, primary_url=primary_url)
-            )
+            hass.async_create_task(_async_remove_lovelace_resources(hass))
 
         hass.bus.async_listen_once("homeassistant_started", _on_started)

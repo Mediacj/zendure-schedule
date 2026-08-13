@@ -3,12 +3,22 @@
  * Resource / extra_module_url: /local/zendure-schedule/zendure-schedule.js
  */
 
-const CARD_VERSION = "1.0.43";
+const CARD_VERSION = "1.0.44";
 const LOGO_URL = `/local/zendure-schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
 const TAG = "zendure-schedule";
 const EDITOR = "zendure-schedule-editor";
+
+// Voorkom dubbele side-effects als de module toch 2× geladen wordt.
+const IS_FIRST_MODULE_LOAD = !window.__ZENDURE_SCHEDULE_MODULE__;
+if (IS_FIRST_MODULE_LOAD) {
+  window.__ZENDURE_SCHEDULE_MODULE__ = CARD_VERSION;
+} else {
+  console.info(
+    `ZENDURE-SCHEDULE ${CARD_VERSION}: skip duplicate module load (was ${window.__ZENDURE_SCHEDULE_MODULE__})`
+  );
+}
 
 /** Entity-keys horen in de integratie-config, niet in card-YAML. */
 const ENTITY_CONFIG_KEYS = [
@@ -31,6 +41,7 @@ function stripEntityConfig(config) {
   return out;
 }
 
+/** Alleen rebuilden na echte customElements re-define (niet periodiek). */
 const rebuildLovelace = () => {
   const walk = (root) => {
     if (!root) return;
@@ -52,21 +63,18 @@ const rebuildLovelace = () => {
     });
   };
   walk(document);
-  try {
-    window.dispatchEvent(
-      new CustomEvent("ll-rebuild", { bubbles: true, composed: true })
-    );
-  } catch (_e) {
-    /* ignore */
-  }
 };
 
 /** HA 2026.8 scoped customElements race heal (frontend#52960). */
 const defineElement = (name, ctor) => {
+  if (!IS_FIRST_MODULE_LOAD && customElements.get(name)) return;
+
   const registryAtLoad = customElements;
   if (!registryAtLoad.get(name)) {
     registryAtLoad.define(name, ctor);
   }
+  if (!IS_FIRST_MODULE_LOAD) return;
+
   const heal = (via) => {
     if (customElements.get(name)) return;
     try {
@@ -83,12 +91,15 @@ const defineElement = (name, ctor) => {
     .whenDefined("home-assistant")
     .then(() => heal("ha-boot"))
     .catch(() => {});
-  [0, 50, 100, 250, 500, 1000, 1500, 2000, 5000].forEach((ms) => {
+  // Beperkte timers: genoeg voor registry-swap, geen storm aan rebuilds.
+  [0, 250, 1000].forEach((ms) => {
     window.setTimeout(() => heal(`timer:${ms}ms`), ms);
   });
 };
 
-console.info(`ZENDURE-SCHEDULE ${CARD_VERSION}`);
+if (IS_FIRST_MODULE_LOAD) {
+  console.info(`ZENDURE-SCHEDULE ${CARD_VERSION}`);
+}
 const MODES = ["off", "nom", "nom_o", "nom_l", "charge", "discharge"];
 const SMART_SOC_MODES = ["nom", "nom_o", "nom_l"];
 const MODE_LABEL = {
@@ -2420,17 +2431,15 @@ class ZendureScheduleEditor extends HTMLElement {
 
 defineElement(EDITOR, ZendureScheduleEditor);
 
-window.customCards = window.customCards || [];
-if (!window.customCards.some((c) => c.type === TAG)) {
-  window.customCards.push({
-    type: TAG,
-    name: "Zendure Schedule",
-    description:
-      "Integratie-card: 24u NOM / SLM-O / SLM-L / laden / ontladen. Werkt zonder community resource.",
-    preview: true,
-  });
+if (IS_FIRST_MODULE_LOAD) {
+  window.customCards = window.customCards || [];
+  if (!window.customCards.some((c) => c.type === TAG)) {
+    window.customCards.push({
+      type: TAG,
+      name: "Zendure Schedule",
+      description:
+        "Integratie-card: 24u NOM / SLM-O / SLM-L / laden / ontladen. Werkt zonder community resource.",
+      preview: true,
+    });
+  }
 }
-
-[0, 250, 1000, 2000].forEach((ms) => {
-  window.setTimeout(rebuildLovelace, ms);
-});
