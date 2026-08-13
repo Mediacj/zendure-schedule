@@ -3,10 +3,31 @@
  * Do not register this file as a Lovelace resource; use the stub instead.
  */
 
-const CARD_VERSION = "1.0.41";
+const CARD_VERSION = "1.0.42";
 const LOGO_URL = `/local/zendure-schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
+
+/** Entity-keys horen in de integratie-config, niet in card-YAML. */
+const ENTITY_CONFIG_KEYS = [
+  "entity",
+  "direction_entity",
+  "charge_power_entity",
+  "discharge_power_entity",
+  "charge_soc_entity",
+  "discharge_soc_entity",
+  "power_entity",
+  "storage_entity",
+  "planner_entity",
+];
+
+function stripEntityConfig(config) {
+  const out = { ...(config || {}) };
+  ENTITY_CONFIG_KEYS.forEach((key) => {
+    delete out[key];
+  });
+  return out;
+}
 
 /** HA 2026.8 scoped customElements race heal (frontend#52960). */
 const defineElement = (name, ctor) => {
@@ -120,11 +141,16 @@ class ZendureScheduleCard extends HTMLElement {
 
   setConfig(config) {
     try {
+      const clean = stripEntityConfig(config);
       this._config = {
         ...DEFAULTS,
-        ...(config || {}),
-        colors: { ...DEFAULTS.colors, ...((config && config.colors) || {}) },
+        ...clean,
+        colors: { ...DEFAULTS.colors, ...((clean && clean.colors) || {}) },
       };
+      // Runtime entity-ids komen uitsluitend uit de integratie (hydrate).
+      ENTITY_CONFIG_KEYS.forEach((key) => {
+        this._config[key] = "";
+      });
       this._selectedHours =
         this._selectedHours instanceof Set ? this._selectedHours : new Set();
       this._activeMode = this._activeMode ?? null;
@@ -213,14 +239,14 @@ class ZendureScheduleCard extends HTMLElement {
   }
 
   _storageEntityId() {
-    return this._config.storage_entity || this._discoverStorageEntity() || null;
+    return this._discoverStorageEntity() || null;
   }
 
   _plannerEntityId() {
-    if (this._config.planner_entity) return this._config.planner_entity;
     const storageId = this._storageEntityId();
     const fromAttr = this._hass?.states?.[storageId]?.attributes?.planner_entity;
     if (fromAttr) return fromAttr;
+    if (this._config.planner_entity) return this._config.planner_entity;
     if (!this._hass?.states) return null;
     for (const [entityId, st] of Object.entries(this._hass.states)) {
       if (
@@ -248,7 +274,7 @@ class ZendureScheduleCard extends HTMLElement {
   }
 
   /**
-   * Vul ontbrekende entity-keys vanuit attributes op de schema-text-entity.
+   * Entity-ids altijd uit attributes op de schema-text-entity (integratie-config).
    */
   _hydrateFromIntegration() {
     const storageId = this._storageEntityId();
@@ -265,7 +291,7 @@ class ZendureScheduleCard extends HTMLElement {
       "planner_entity",
     ].forEach((key) => {
       const attrKey = key === "entity" ? "operation_entity" : key;
-      if (!this._config[key] && attrs[attrKey]) {
+      if (attrs[attrKey]) {
         patch[key] = attrs[attrKey];
       }
     });
@@ -719,13 +745,11 @@ class ZendureScheduleCard extends HTMLElement {
   }
 
   _chargePowerEntity() {
-    return this._config.charge_power_entity || this._config.power_entity || "";
+    return this._config.charge_power_entity || "";
   }
 
   _dischargePowerEntity() {
-    return (
-      this._config.discharge_power_entity || this._config.power_entity || ""
-    );
+    return this._config.discharge_power_entity || "";
   }
 
   _buildDom() {
@@ -1973,24 +1997,36 @@ defineElement("zendure-schedule-inner", ZendureScheduleCard);
 
 class ZendureScheduleEditor extends HTMLElement {
   setConfig(config) {
-    this._raw = { ...(config || {}) };
+    const hadEntityKeys = ENTITY_CONFIG_KEYS.some(
+      (key) => config && Object.prototype.hasOwnProperty.call(config, key)
+    );
+    this._raw = stripEntityConfig(config);
     this._config = {
       ...DEFAULTS,
       ...this._raw,
       colors: { ...DEFAULTS.colors, ...(this._raw.colors || {}) },
     };
+    ENTITY_CONFIG_KEYS.forEach((key) => {
+      delete this._config[key];
+    });
     this._render();
+    // Oude Lovelace-YAML opschonen: entity-velden verwijderen bij openen editor.
+    if (hadEntityKeys) {
+      this.dispatchEvent(
+        new CustomEvent("config-changed", {
+          detail: { config: { ...this._raw } },
+          bubbles: true,
+          composed: true,
+        })
+      );
+    }
   }
 
   set hass(hass) {
     this._hass = hass;
     if (!this._built) {
       this._render();
-      return;
     }
-    this.querySelectorAll("ha-entity-picker").forEach((picker) => {
-      picker.hass = hass;
-    });
   }
 
   connectedCallback() {
@@ -2062,39 +2098,9 @@ class ZendureScheduleEditor extends HTMLElement {
             <input type="checkbox" data-key="show_soc">
             SOC weergeven
           </label>
-
-          <div class="section-title">Entities (optioneel, leeg = uit integratie)</div>
-          <div class="row">
-            <label>Operation select (entity)</label>
-            <ha-entity-picker data-key="entity" domain="select" allow-custom-entity></ha-entity-picker>
-          </div>
-          <div class="row">
-            <label>AC mode select (direction_entity)</label>
-            <ha-entity-picker data-key="direction_entity" domain="select" allow-custom-entity></ha-entity-picker>
-          </div>
-          <div class="row">
-            <label>Laadvermogen (charge_power_entity)</label>
-            <ha-entity-picker data-key="charge_power_entity" domain="number" allow-custom-entity></ha-entity-picker>
-          </div>
-          <div class="row">
-            <label>Ontlaadvermogen (discharge_power_entity)</label>
-            <ha-entity-picker data-key="discharge_power_entity" domain="number" allow-custom-entity></ha-entity-picker>
-          </div>
-          <div class="row">
-            <label>Max SOC laden (charge_soc_entity)</label>
-            <ha-entity-picker data-key="charge_soc_entity" domain="number" allow-custom-entity></ha-entity-picker>
-          </div>
-          <div class="row">
-            <label>Min SOC ontladen (discharge_soc_entity)</label>
-            <ha-entity-picker data-key="discharge_soc_entity" domain="number" allow-custom-entity></ha-entity-picker>
-          </div>
-          <div class="row">
-            <label>Schema-opslag (storage_entity)</label>
-            <ha-entity-picker data-key="storage_entity" allow-custom-entity></ha-entity-picker>
-          </div>
-          <div class="row">
-            <label>Legacy power_entity (optioneel)</label>
-            <ha-entity-picker data-key="power_entity" domain="number" allow-custom-entity></ha-entity-picker>
+          <div class="hint">
+            Entities (operation, vermogen, SOC, schema) komen uit de
+            Zendure Schedule-integratieconfiguratie — niet uit de card-YAML.
           </div>
 
           <div class="section-title">Select-opties</div>
@@ -2171,8 +2177,8 @@ class ZendureScheduleEditor extends HTMLElement {
           </div>
 
           <div class="hint">
-            Lege entity-velden worden automatisch gevuld vanuit de Zendure Schedule-integratie.
-            Kleuren en opties overschrijven de standaardwaarden in de card.
+            Opties en kleuren overschrijven de standaardwaarden in de card.
+            Entities wijzig je in Instellingen → Apparaten &amp; diensten → Zendure Schedule.
           </div>
         </div>
       `;
@@ -2249,14 +2255,6 @@ class ZendureScheduleEditor extends HTMLElement {
         });
       });
 
-      this.querySelectorAll("ha-entity-picker").forEach((picker) => {
-        picker.addEventListener("value-changed", (ev) => {
-          const key = picker.dataset.key;
-          const value = ev.detail?.value || "";
-          this._updateConfig({ [key]: value });
-        });
-      });
-
       ["nom", "nom_o", "nom_l", "charge", "discharge", "current", "idle"].forEach(
         (colorKey) => {
           const text = this.querySelector(`input[data-color="${colorKey}"]`);
@@ -2292,15 +2290,6 @@ class ZendureScheduleEditor extends HTMLElement {
       );
 
       this._built = true;
-    }
-
-    if (this._hass) {
-      this.querySelectorAll("ha-entity-picker").forEach((picker) => {
-        picker.hass = this._hass;
-        const key = picker.dataset.key;
-        const val = this._config[key] || "";
-        if (picker.value !== val) picker.value = val;
-      });
     }
 
     const syncText = [
@@ -2363,12 +2352,15 @@ class ZendureScheduleEditor extends HTMLElement {
   }
 
   _updateConfig(patch) {
-    const raw = { ...(this._raw || {}) };
+    const raw = stripEntityConfig({ ...(this._raw || {}) });
     if (patch.colors) {
       raw.colors = { ...(raw.colors || {}), ...patch.colors };
       delete patch.colors;
     }
     Object.assign(raw, patch);
+    ENTITY_CONFIG_KEYS.forEach((key) => {
+      delete raw[key];
+    });
     if (raw.nom_o_tag != null) {
       raw.nom_o_tag = String(raw.nom_o_tag).slice(0, 5);
     }
@@ -2381,6 +2373,9 @@ class ZendureScheduleEditor extends HTMLElement {
       ...raw,
       colors: { ...DEFAULTS.colors, ...(raw.colors || {}) },
     };
+    ENTITY_CONFIG_KEYS.forEach((key) => {
+      delete this._config[key];
+    });
     this.dispatchEvent(
       new CustomEvent("config-changed", {
         detail: { config: { ...raw } },

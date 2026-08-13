@@ -50,37 +50,20 @@ Na update: **HA herstarten**, hard refresh, en in **Dashboard → Bronnen** éé
 
 ## Dashboard card
 
-### Entities in de card-YAML?
-
-Bij normaal gebruik via de integratie hoef je **geen** entities in de card-YAML te zetten.
-
-- **Integratie-config** (bij installeren/opties) is de bron. Daar staan de entities die elk uur door de backend worden aangestuurd.
-- **Card-YAML** is optioneel: alleen als je daar een entity invult, gebruikt de card die waarde. Lege velden worden automatisch uit de integratie gehaald (via de schema-text-entity).
-
-Minimaal is dus genoeg:
+Entities staan **alleen** in de integratieconfiguratie (installeren / opties). De card leest ze automatisch via de schema-text-entity.
 
 ```yaml
 type: custom:zendure-schedule
 title: ZENDURE PLANNER
 ```
 
-Entities in de YAML zijn alleen nodig als je bewust iets anders wilt dan de integratie-config, of als je de card zonder integratie gebruikt.
-
-Volledig voorbeeld (alle overrides optioneel):
+Optioneel kun je UI-opties en kleuren in de card zetten:
 
 ```yaml
 type: custom:zendure-schedule
 title: ZENDURE PLANNER 2400 PRO
 enabled: true
 auto_apply: false
-entity: select.zendure_manager_operation
-direction_entity: select.solarflow_2400_pro_ac_mode
-charge_power_entity: number.solarflow_2400_pro_input_limit
-discharge_power_entity: number.solarflow_2400_pro_output_limit
-charge_soc_entity: number.solarflow_2400_pro_soc_set
-discharge_soc_entity: number.solarflow_2400_pro_min_soc
-storage_entity: text.zendure_schedule_schema
-power_entity: ""
 show_soc: true
 nom_option: smart
 nom_o_option: smart_discharging
@@ -109,7 +92,7 @@ colors:
   idle: "#7fa6b8"
 ```
 
-Alle velden zijn ook bewerkbaar in de visuele HA-card-editor (inclusief color pickers).
+Alle UI-velden zijn ook bewerkbaar in de visuele HA-card-editor (inclusief color pickers). Entity-pickers zitten daar niet meer.
 
 ### Card YAML-velden
 
@@ -117,19 +100,11 @@ Alle velden zijn ook bewerkbaar in de visuele HA-card-editor (inclusief color pi
 |------|------|-----------|--------------|
 | `title` | string | `ZENDURE PLANNER` | Titel bovenaan de card |
 | `enabled` | bool | `true` | Startwaarde planner aan/uit (wordt overschreven door schema-opslag) |
-| `auto_apply` | bool | `false`* | Client-side toepassen vanuit de browser. Bij integratie-storage normaal **niet** nodig (backend past toe) |
-| `entity` | entity_id | *(uit integratie)* | Operation-select (`select.*`), bijv. NOM/smart |
-| `direction_entity` | entity_id | *(uit integratie)* | AC-mode select (`input` / `output`) |
-| `charge_power_entity` | entity_id | *(uit integratie)* | Number-entity voor laadvermogen |
-| `discharge_power_entity` | entity_id | *(uit integratie)* | Number-entity voor ontlaadvermogen |
+| `auto_apply` | bool | `false`* | Client-side toepassen vanuit de browser. Bij integratie normaal **niet** nodig (backend past toe) |
 | `show_soc` | bool | `true` | SOC weergeven: bij laden/ontladen één slider; bij NOM/SLM-O/SLM-L Max + Min SOC |
-| `charge_soc_entity` | entity_id | *(uit integratie)* | Number-entity max SOC bij laden (bijv. `soc_set`) |
-| `discharge_soc_entity` | entity_id | *(uit integratie)* | Number-entity min SOC bij ontladen (bijv. `min_soc`) |
 | `default_charge_soc` | number | `100` | Standaard max SOC (%) bij nieuwe laaduren |
 | `default_discharge_soc` | number | `10` | Standaard min SOC (%) bij nieuwe ontlaaduren |
-| `storage_entity` | entity_id | *(auto)* | Text/input_text met compact schema; leeg = automatisch zoeken |
-| `power_entity` | entity_id | `""` | Legacy fallback als charge/discharge-power niet gezet zijn |
-| `nom_option` | string | `smart` | Option-waarde op `entity` voor NOM |
+| `nom_option` | string | `smart` | Option-waarde op operation-select voor NOM |
 | `nom_o_option` | string | `smart_discharging` | Option-waarde voor SLM-O |
 | `nom_o_label` | string | `Slim ontladen` | Volledige tekst voor SLM-O (info-paneel) |
 | `nom_o_tag` | string | `SLM-O` | Korte tekst op knoppen/uurtegels (max 5) |
@@ -153,9 +128,9 @@ Alle velden zijn ook bewerkbaar in de visuele HA-card-editor (inclusief color pi
 | `colors.current` | hex | `#eaf6ff` | Accent huidig uur |
 | `colors.idle` | hex | `#7fa6b8` | Kleur uit/idle |
 
-\* `auto_apply` is impliciet `false` zodra er een `storage_entity` (of auto-discovered schema-text) is, tenzij je `auto_apply: true` zet.
+\* `auto_apply` is impliciet `false` zodra de schema-text van de integratie gevonden is, tenzij je `auto_apply: true` zet.
 
-Lege entity-velden (`""` of weggelaten) betekenen: gebruik de entities uit de **integratie-configuratie**. Ingevulde YAML-waarden overschrijven die keuze alleen voor de card (client-side); de backend blijft de integratie-entities gebruiken.
+Entities wijzig je in **Instellingen → Apparaten & diensten → Zendure Schedule** (niet in de card-YAML).
 
 ## Entities (integratie)
 
