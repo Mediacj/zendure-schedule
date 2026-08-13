@@ -284,10 +284,18 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _async_hourly_tick(self, _now: datetime) -> None:
         if not self._planner_is_on():
             return
-        # Uurwisseling: één keer toepassen (ook UIT → stand-by).
-        # Minuut-update doet geen herstel meer bij UIT.
+        # Uurwisseling: toepassen. Zelfde modus als vorig uur → geen force
+        # (modus loopt door; alleen power/SOC-delta of drift wordt gezet).
         self._off_hour_quiet = None
-        self.hass.async_create_task(self.async_apply_schedule(force=True))
+        hour = dt_util.now().hour
+        hours = self.data.get("hours") or []
+        force = True
+        if len(hours) >= 24:
+            prev_mode = hours[(hour - 1) % 24].get("mode")
+            cur_mode = hours[hour].get("mode")
+            if prev_mode == cur_mode and cur_mode != MODE_OFF:
+                force = False
+        self.hass.async_create_task(self.async_apply_schedule(force=force))
 
     async def _async_update_data(self) -> dict[str, Any]:
         # Sync enabled vanuit entry (bron van waarheid).
@@ -584,8 +592,12 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return
 
         key = f"{hour}:{mode}:{power}:{soc}:{soc_min}"
-        mode_key = f"{hour}:{mode}"
-        transition = self._last_mode_key != mode_key
+        # Alleen echte moduswissel (niet louter uurwissel bijzelfde modus).
+        transition = self._last_mode_key != mode
+        hours = self.data.get("hours") or []
+        prev_mode = (
+            hours[(hour - 1) % 24].get("mode") if len(hours) >= 24 else None
+        )
         matches_live = self._slot_matches_live(
             mode=mode,
             power=power,
@@ -598,6 +610,21 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             charge_soc_entity=charge_soc_entity,
             discharge_soc_entity=discharge_soc_entity,
         )
+        # NOM→NOM / NOM-O→NOM-O / laden→laden: modus loopt door.
+        # Niets doen als live al klopt (ook bij force van uur-tick).
+        if (
+            prev_mode == mode
+            and mode != MODE_OFF
+            and matches_live
+            and self._last_mode_key == mode
+        ):
+            self._last_applied_key = key
+            _LOGGER.debug(
+                "Zendure Schedule uur %s: modus %s blijft gelijk — geen apply",
+                hour,
+                mode,
+            )
+            return
         if not force and self._last_applied_key == key and matches_live:
             return
         if not matches_live and self._last_applied_key == key:
@@ -616,7 +643,7 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 await self._async_zero_power_limits(charge_power, discharge_power)
                 self._off_hour_quiet = hour
                 self._last_applied_key = key
-                self._last_mode_key = mode_key
+                self._last_mode_key = mode
                 _LOGGER.info(
                     "Zendure Schedule uur %s uit — operation=%s, 0 W, stand-by tot volgend uur",
                     hour,
@@ -635,8 +662,9 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     await self._async_set_number(charge_soc_entity, max_soc)
                     await self._async_set_number(discharge_soc_entity, min_soc)
                 _LOGGER.info(
-                    "Zendure Schedule toegepast: %s (max SOC=%s, min SOC=%s)",
-                    mode_key,
+                    "Zendure Schedule toegepast: %s:%s (max SOC=%s, min SOC=%s)",
+                    hour,
+                    mode,
                     max_soc,
                     min_soc,
                 )
@@ -645,6 +673,7 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     operation,
                     str(self._cfg(CONF_NOM_O_OPTION, DEFAULT_NOM_O_OPTION)),
                 )
+                _LOGGER.info("Zendure Schedule toegepast: %s:%s", hour, mode)
             elif mode in (MODE_CHARGE, MODE_DISCHARGE):
                 await self._async_select_option(
                     operation,
@@ -669,8 +698,8 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         )
                     ),
                 )
-                # Idle-limiet alleen bij modus/uur-wissel op 0 — niet elke minuut
-                # (voorkomt 0/100/200-flappen met Zendure).
+                # Idle-limiet alleen bij echte moduswissel op 0 — niet bij
+                # uurwissel met dezelfde modus (voorkomt flappen met Zendure).
                 if transition:
                     if mode == MODE_CHARGE:
                         await self._async_set_power(discharge_power, 0)
@@ -685,12 +714,13 @@ class ZendureScheduleCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     if transition or not matches_live:
                         await self._async_set_number(discharge_soc_entity, soc)
                 _LOGGER.info(
-                    "Zendure Schedule toegepast: %s (actief=%s W)",
-                    mode_key,
+                    "Zendure Schedule toegepast: %s:%s (actief=%s W)",
+                    hour,
+                    mode,
                     power,
                 )
             self._last_applied_key = key
-            self._last_mode_key = mode_key
+            self._last_mode_key = mode
             _LOGGER.debug("Zendure schedule toegepast: %s", key)
         except Exception:  # noqa: BLE001 - surface apply failures in logs
             _LOGGER.exception("Zendure schedule toepassen mislukt")
