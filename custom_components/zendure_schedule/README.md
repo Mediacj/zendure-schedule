@@ -33,14 +33,13 @@ Zelfstandige custom integration met 24u-planner voor Zendure (NOM / SLM-O / SLM-
    - Laadvermogen (number)
    - Ontlaadvermogen (number)
 
-Lovelace laadt een **kleine stub** die `zendure-schedule` meteen registreert (binnen HA’s ~2s-timeout), daarna de volle card:
+Lovelace laadt één module-card:
 
-- `/local/zendure-schedule/zendure-schedule.js` (stub — dit is de resource)
-- `/local/zendure-schedule/zendure-schedule-card.js` (wordt door de stub geïmporteerd)
+- `/local/zendure-schedule/zendure-schedule.js`
 
 Bestanden worden bij start naar `config/www/zendure-schedule/` gekopieerd. Oude URL `/zendure_schedule/...` blijft als fallback.
 
-Na update: **HA herstarten**, hard refresh, en in **Dashboard → Bronnen** één module op `/local/zendure-schedule/zendure-schedule.js`. In de console hoort `ZENDURE-SCHEDULE stub 1.0.33` te staan.
+Na update: **HA herstarten**, hard refresh, en in **Dashboard → Bronnen** één module op `/local/zendure-schedule/zendure-schedule.js`. In de console hoort `ZENDURE-SCHEDULE 1.0.43` te staan.
 
 ## Schermvoorbeeld
 
