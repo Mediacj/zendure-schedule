@@ -3,7 +3,7 @@
  * Do not register this file as a Lovelace resource; use the stub instead.
  */
 
-const CARD_VERSION = "1.0.37";
+const CARD_VERSION = "1.0.38";
 const LOGO_URL = `/local/zendure-schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
@@ -1652,14 +1652,15 @@ class ZendureScheduleCard extends HTMLElement {
       }
       .brush.is-muted,
       .brush:disabled {
-        color: #5f7380;
-        border-color: rgba(255,255,255,0.05);
-        background: rgba(255,255,255,0.02);
+        color: #6a7f8c;
+        border-color: rgba(255,255,255,0.22);
+        background: rgba(255,255,255,0.03);
         box-shadow: none;
-        opacity: 0.45;
+        opacity: 1;
         cursor: default;
       }
       .brush-row.has-selection .brush:not(:disabled) {
+        color: #9fc4d6;
         opacity: 1;
         cursor: pointer;
       }
@@ -1834,21 +1835,23 @@ class ZendureScheduleCard extends HTMLElement {
         color: #ffebee;
       }
       .footer-bar {
-        display: flex; justify-content: flex-end; align-items: center;
-        gap: 12px; margin-top: 10px; min-height: 22px;
+        display: flex; flex-direction: column; align-items: flex-end;
+        gap: 8px; margin-top: 12px;
       }
+      .selection-clear {
+        appearance: none; border: 1px solid rgba(63,182,255,0.28);
+        background: rgba(63,182,255,0.08); color: #d8e6ee;
+        border-radius: 8px; padding: 7px 12px; font-size: 12px; cursor: pointer;
+      }
+      .selection-clear:hover {
+        background: rgba(63,182,255,0.16); border-color: rgba(63,182,255,0.5);
+      }
+      .selection-clear.hidden { display: none; }
       .selection-count {
-        color: #6a8490; font-size: 11px; letter-spacing: 0.4px;
-        font-variant-numeric: tabular-nums;
+        color: #7fa6b8; font-size: 15px; font-weight: 600;
+        letter-spacing: 0.5px; font-variant-numeric: tabular-nums;
       }
       .selection-count.has-selection { color: #eaf6ff; }
-      .selection-clear {
-        appearance: none; border: none; background: transparent;
-        color: #7fa6b8; font-size: 11px; cursor: pointer; padding: 0;
-        text-decoration: underline; text-underline-offset: 2px;
-      }
-      .selection-clear:hover { color: #eaf6ff; }
-      .selection-clear.hidden { display: none; }
     `;
   }
 }

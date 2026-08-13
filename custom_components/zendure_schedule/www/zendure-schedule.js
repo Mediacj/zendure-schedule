@@ -15,7 +15,7 @@ const TAG = "zendure-schedule";
 const EDITOR = "zendure-schedule-editor";
 const INNER = "zendure-schedule-inner";
 const EDITOR_INNER = "zendure-schedule-editor-inner";
-const VERSION = "1.0.37";
+const VERSION = "1.0.38";
 const CARD_URL = new URL(
   `./zendure-schedule-card.js?v=${VERSION}`,
   import.meta.url
