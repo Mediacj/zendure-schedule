@@ -3,7 +3,7 @@
  * Resource / extra_module_url: /local/zendure-schedule/zendure-schedule.js
  */
 
-const CARD_VERSION = "1.0.46";
+const CARD_VERSION = "1.0.47";
 const LOGO_URL = `/local/zendure-schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
@@ -1424,7 +1424,7 @@ class ZendureScheduleCard extends HTMLElement {
       s === "extern" ||
       s.includes("extern")
     ) {
-      return this._nomOTag();
+      return this._nomOLabel();
     }
 
     if (
@@ -1432,7 +1432,7 @@ class ZendureScheduleCard extends HTMLElement {
       s === "smart_charging" ||
       s.includes("smart_charg")
     ) {
-      return this._nomLTag();
+      return this._nomLLabel();
     }
 
     if (s === "off") return "Off";
