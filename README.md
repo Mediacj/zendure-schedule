@@ -38,6 +38,8 @@ Zie ook het artikel op energienerds.nl over deze integratie!
 
 ## Installeren
 
+#Vergeet niet om eerst de <a href="https://github.com/Zendure/Zendure-HA">Home Assistant Zendure integratie</a> te installeren, als je die nog niet hebt.
+
 ### Snelste manier (HACS)
 
 <p align="center">
