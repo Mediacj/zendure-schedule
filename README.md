@@ -24,6 +24,16 @@ Zelfstandige custom integration met 24u-planner voor Zendure (NOM / SLM-O / SLM-
 
 ## Installeren
 
+### Snelste manier (HACS)
+
+<p align="center">
+  <a href="https://my.home-assistant.io/redirect/hacs_repository/?repository=zendure-schedule&category=integration&owner=Mediacj" target="_blank" rel="noreferrer noopener"><img src="https://my.home-assistant.io/badges/hacs_repository.svg" alt="Open your Home Assistant instance and open a repository inside the Home Assistant Community Store." /></a>
+</p>
+
+Klik op de knop hierboven om de repository direct in HACS te openen (Home Assistant moet bereikbaar zijn vanaf dit apparaat).
+
+### Handmatig / via HACS-custom repository
+
 1. Installeer via HACS (custom repository) of kopieer `custom_components/zendure_schedule` naar je Home Assistant `custom_components`-map.
 2. Herstart Home Assistant.
 3. Ga naar **Instellingen → Apparaten en services → Integratie toevoegen** en zoek **Zendure Schedule**.
@@ -41,7 +51,7 @@ Bestanden worden bij start naar `config/www/zendure-schedule/` gekopieerd. Oude 
 
 Geen aparte Lovelace-resource nodig (die veroorzaakte een dubbele load). Bij upgrade ruimt de integratie oude Zendure-resources onder **Dashboard → Bronnen** op; controleer eventueel handmatig of `/local/zendure-schedule/...` daar niet meer staat.
 
-Na update: **HA herstarten**, hard refresh. In de console hoort `ZENDURE-SCHEDULE 1.0.44` te staan (geen tweede load).
+Na update: **HA herstarten**, hard refresh. In de console hoort `ZENDURE-SCHEDULE 1.0.46` te staan (geen tweede load).
 
 ## Schermvoorbeeld
 
