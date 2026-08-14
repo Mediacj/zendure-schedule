@@ -59,7 +59,7 @@ Klik op de knop hierboven om de repository direct in HACS te openen (Home Assist
    - Maximale SOC
    - Minimale SOC
 
-Na update: **HA herstarten**, hard refresh. In de console hoort `ZENDURE-SCHEDULE 1.0.46` te staan (geen tweede load).
+Na iedere integratie update: **HA herstarten**, hard refresh.
 
 ## Dashboard card
 
