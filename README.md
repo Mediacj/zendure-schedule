@@ -141,8 +141,6 @@ Alle UI-velden zijn ook bewerkbaar in de visuele HA-card-editor (inclusief color
 | `colors.current` | hex | `#eaf6ff` | Accent huidig uur |
 | `colors.idle` | hex | `#7fa6b8` | Kleur uit/idle |
 
-\* `auto_apply` is impliciet `false` zodra de schema-text van de integratie gevonden is, tenzij je `auto_apply: true` zet.
-
 Entities wijzig je in **Instellingen → Apparaten & diensten → Zendure Schedule** (niet in de card-YAML).
 
 ## Entities (integratie)
@@ -154,6 +152,9 @@ Entities wijzig je in **Instellingen → Apparaten & diensten → Zendure Schedu
 | `sensor.*_geplande_modus` | Modus huidig uur |
 | `sensor.*_gepland_vermogen` | Vermogen huidig uur |
 | `sensor.*_huidig_uur` | Uur (0–23) |
+| `number.*_soc_set` | SOC maximaal |
+| `number.*_min_soc` | SOC minimaal |
+
 
 ## Services
 
@@ -175,4 +176,4 @@ Daarnaast controleert de integratie **elke minuut** of het live vermogen/modus n
 
 **Planner uit** of **huidig uur = Uit**: één keer `0 W`, daarna **geen** minutencheck/herstel meer (oude waarden worden niet teruggezet). Pas weer actief bij planner aan + uur ≠ uit.
 
-`power_step` bepaalt alleen de **sliderstap** in de UI. Bij toepassen gaat de gekozen waarde **letterlijk** door — er wordt niet mee gerekend of afgerond.
+`power_step` bepaalt alleen de **sliderstap** in de UI.
