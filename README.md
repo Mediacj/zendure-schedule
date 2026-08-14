@@ -54,12 +54,12 @@ Klik op de knop hierboven om de repository direct in HACS te openen (Home Assist
 2. Herstart Home Assistant.
 3. Ga naar **Instellingen → Apparaten en services → Integratie toevoegen** en zoek **Zendure Schedule**.
 4. Kies zelf je entities (velden starten leeg):
-   - Operation select
-   - AC mode select
-   - Laadvermogen (number)
-   - Ontlaadvermogen (number)
-   - Maximale SOC
-   - Minimale SOC
+   - Bedrijfsmodus -> select.zendure_manager_operation (of gelijkwaardig)
+   - AC bedrijfsmodus -> select.*_ac_mode
+   - Laadvermogen (number) -> number.*_input_limit
+   - Ontlaadvermogen (number) -> number.*_output_limit
+   - Maximale SOC -> number.*_pro_soc_set
+   - Minimale SOC -> number.*_pro_min_soc
 
 Na iedere integratie update: **HA herstarten**, hard refresh.
 
@@ -154,8 +154,7 @@ Entities wijzig je in **Instellingen → Apparaten & diensten → Zendure Schedu
 | `sensor.*_geplande_modus` | Modus huidig uur |
 | `sensor.*_gepland_vermogen` | Vermogen huidig uur |
 | `sensor.*_huidig_uur` | Uur (0–23) |
-| `number.*_soc_set` | SOC maximaal |
-| `number.*_min_soc` | SOC minimaal |
+
 
 
 ## Services
