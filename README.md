@@ -58,8 +58,8 @@ Klik op de knop hierboven om de repository direct in HACS te openen (Home Assist
    - AC bedrijfsmodus -> select.*_ac_mode
    - Laadvermogen (number) -> number.*_input_limit
    - Ontlaadvermogen (number) -> number.*_output_limit
-   - Maximale SOC -> number.*_pro_soc_set
-   - Minimale SOC -> number.*_pro_min_soc
+   - Maximale SOC -> number.*_soc_set
+   - Minimale SOC -> number.*_min_soc
 
 Na iedere integratie update: **HA herstarten**, hard refresh.
 
