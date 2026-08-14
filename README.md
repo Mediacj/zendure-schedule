@@ -18,9 +18,23 @@
 
 Zelfstandige custom integration met 24u-planner voor Zendure (NOM / SLM-O / SLM-L / laden / ontladen).
 
-- Eigen Lovelace-card (automatisch geladen) — **geen** community/`www/community` resource nodig
-- Backend past elk uur toe — geen aparte automation of `input_text`-helper nodig
-- Brand-icoon in `brand/` (Energienerds) voor het integratiescherm
+- Eigen Lovelace-card
+- Backend past elk uur toe — geen aparte automation nodig
+- Kleuren en alle dashboard velden via visuele editor te bewerken
+- Per uur min/max SOC instelbaar (optie SOC weergeven)
+
+Zie ook het artikel op energienerds.nl over deze integratie!
+
+## Randvoorwaarden
+- werkt met alle ondersteunde batterijen van de <a href="https://github.com/Zendure/Zendure-HA">Home Assistant Zendure integratie</a> waaronder: <a href="https://energienerds.nl/index.php/2026/02/10/zendure-solarflow-2400-ac-review-de-ultieme-ac-stekkerbatterij-voor-salderingsvrij-zelfverbruik" target="_blank" rel="noopener">Zendure SolarFlow 2400 AC+</a> en de <a href="https://energienerds.nl/index.php/2026/05/08/zendure-solarflow-mix-review" target="_blank" rel="noopener">SolarFlow Mix serie</a>
+- Geïnstalleerde <a href="https://github.com/Zendure/Zendure-HA">Home Assistant Zendure integratie</a>
+
+## Schermvoorbeeld
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Mediacj/zendure-schedule/main/images/card-voorbeeld.jpg" alt="Zendure Schedule card" width="720">
+</p>
+
 
 ## Installeren
 
@@ -53,11 +67,7 @@ Geen aparte Lovelace-resource nodig (die veroorzaakte een dubbele load). Bij upg
 
 Na update: **HA herstarten**, hard refresh. In de console hoort `ZENDURE-SCHEDULE 1.0.46` te staan (geen tweede load).
 
-## Schermvoorbeeld
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/Mediacj/zendure-schedule/main/images/card-voorbeeld.jpg" alt="Zendure Schedule card" width="720">
-</p>
 
 ## Dashboard card
 
