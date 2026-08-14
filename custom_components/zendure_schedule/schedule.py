@@ -7,6 +7,7 @@ Legacy comma-separated p/s/n values are still accepted when parsing.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from .const import (
@@ -166,9 +167,31 @@ def _pack_powers(schedule: list[dict[str, Any]]) -> str:
     return "".join(f"{max(0, min(9999, int(s['power']))):04d}" for s in schedule)
 
 
+# 100 past niet in 2 decimale cijfers; AA is de vaste encoding (altijd 2 chars).
+_SOC_PACK_RE = re.compile(r"^(?:[0-9]{2}|AA|aa){24}")
+
+
+def _pack_soc_pair(value: int) -> str:
+    """Encode one SOC 0–100 as exactly 2 characters."""
+    soc = max(0, min(100, int(value)))
+    if soc == 100:
+        return "AA"
+    return f"{soc:02d}"
+
+
+def _decode_soc_pair(pair: str, fallback: int = 0) -> int:
+    """Decode one 2-char (or legacy) SOC token."""
+    text = str(pair or "").strip()
+    if not text:
+        return clamp_soc(fallback, fallback)
+    if text.upper() == "AA":
+        return 100
+    return clamp_soc(text, fallback)
+
+
 def _pack_socs(values: list[int]) -> str:
-    """24×2 digit SOC 0–100 (always 48 chars)."""
-    return "".join(f"{max(0, min(100, int(v))):02d}" for v in values)
+    """24×2-char SOC 0–100 (always 48 chars; 100 → AA)."""
+    return "".join(_pack_soc_pair(v) for v in values)
 
 
 def _unpack_powers(raw: str) -> list[str]:
@@ -183,13 +206,14 @@ def _unpack_powers(raw: str) -> list[str]:
 
 
 def _unpack_socs(raw: str) -> list[str]:
-    """Support legacy comma-lists and dense 48-char packs."""
+    """Support legacy comma-lists and dense 48-char packs (digits or AA)."""
     if not raw:
         return []
     if "," in raw:
         return raw.split(",")
-    if len(raw) >= 48 and raw[:48].isdigit():
-        return [raw[i : i + 2] for i in range(0, 48, 2)]
+    head = raw[:48]
+    if len(raw) >= 48 and _SOC_PACK_RE.match(head):
+        return [head[i : i + 2] for i in range(0, 48, 2)]
     return []
 
 
@@ -305,11 +329,11 @@ def parse_compact(
             mode, discharge_soc=discharge_soc
         )
         if i < len(soc_parts) and soc_parts[i] != "":
-            soc = clamp_soc(soc_parts[i], fallback_soc)
+            soc = _decode_soc_pair(soc_parts[i], fallback_soc)
         else:
             soc = fallback_soc
         if i < len(min_parts) and min_parts[i] != "":
-            soc_min = clamp_soc(min_parts[i], fallback_min)
+            soc_min = _decode_soc_pair(min_parts[i], fallback_min)
         else:
             soc_min = fallback_min
         hours.append(

@@ -41,7 +41,7 @@ Bestanden worden bij start naar `config/www/zendure-schedule/` gekopieerd. Oude 
 
 Geen aparte Lovelace-resource nodig (die veroorzaakte een dubbele load). Bij upgrade ruimt de integratie oude Zendure-resources onder **Dashboard → Bronnen** op; controleer eventueel handmatig of `/local/zendure-schedule/...` daar niet meer staat.
 
-Na update: **HA herstarten**, hard refresh. In de console hoort `ZENDURE-SCHEDULE 1.0.45` te staan (geen tweede load).
+Na update: **HA herstarten**, hard refresh. In de console hoort `ZENDURE-SCHEDULE 1.0.46` te staan (geen tweede load).
 
 ## Schermvoorbeeld
 

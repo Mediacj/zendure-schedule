@@ -3,7 +3,7 @@
  * Resource / extra_module_url: /local/zendure-schedule/zendure-schedule.js
  */
 
-const CARD_VERSION = "1.0.45";
+const CARD_VERSION = "1.0.46";
 const LOGO_URL = `/local/zendure-schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
@@ -530,10 +530,10 @@ class ZendureScheduleCard extends HTMLElement {
       (slot, i) => mins[i] !== this._defaultSocMinForMode(slot.mode)
     );
     if (socCustom) {
-      parts.push(`s=${socs.map((v) => String(v).padStart(2, "0")).join("")}`);
+      parts.push(`s=${socs.map((v) => this._packSocPair(v)).join("")}`);
     }
     if (minCustom) {
-      parts.push(`n=${mins.map((v) => String(v).padStart(2, "0")).join("")}`);
+      parts.push(`n=${mins.map((v) => this._packSocPair(v)).join("")}`);
     }
     return parts.join(";");
   }
@@ -585,12 +585,26 @@ class ZendureScheduleCard extends HTMLElement {
       (slot, i) => mins[i] !== this._defaultSocMinForMode(slot.mode)
     );
     if (socCustom) {
-      parts.push(`s=${socs.map((v) => String(v).padStart(2, "0")).join("")}`);
+      parts.push(`s=${socs.map((v) => this._packSocPair(v)).join("")}`);
     }
     if (minCustom) {
-      parts.push(`n=${mins.map((v) => String(v).padStart(2, "0")).join("")}`);
+      parts.push(`n=${mins.map((v) => this._packSocPair(v)).join("")}`);
     }
     return parts.join(";");
+  }
+
+  _packSocPair(value) {
+    const soc = this._clampSoc(value, 0);
+    // 100 past niet in 2 decimale cijfers — vaste encoding AA.
+    if (soc === 100) return "AA";
+    return String(soc).padStart(2, "0");
+  }
+
+  _decodeSocPair(pair, fallback = 0) {
+    const text = String(pair ?? "").trim();
+    if (!text) return this._clampSoc(fallback, fallback);
+    if (text.toUpperCase() === "AA") return 100;
+    return this._clampSoc(text, fallback);
   }
 
   _unpackPowers(raw) {
@@ -607,9 +621,10 @@ class ZendureScheduleCard extends HTMLElement {
   _unpackSocs(raw) {
     if (!raw) return [];
     if (raw.includes(",")) return raw.split(",");
-    if (raw.length >= 48 && /^\d+$/.test(raw.slice(0, 48))) {
+    const head = raw.slice(0, 48);
+    if (raw.length >= 48 && /^(?:[0-9]{2}|AA|aa){24}$/.test(head)) {
       const out = [];
-      for (let i = 0; i < 48; i += 2) out.push(raw.slice(i, i + 2));
+      for (let i = 0; i < 48; i += 2) out.push(head.slice(i, i + 2));
       return out;
     }
     return [];
@@ -638,8 +653,8 @@ class ZendureScheduleCard extends HTMLElement {
     );
     if (!parts.m || parts.m.length < 24) return null;
     const powers = this._unpackPowers(parts.p || "").map((n) => parseInt(n, 10));
-    const socs = this._unpackSocs(parts.s || "").map((n) => parseInt(n, 10));
-    const mins = this._unpackSocs(parts.n || "").map((n) => parseInt(n, 10));
+    const socPairs = this._unpackSocs(parts.s || "");
+    const minPairs = this._unpackSocs(parts.n || "");
     const hours = [];
     for (let i = 0; i < 24; i++) {
       const mode = CHAR_TO_MODE[parts.m[i]] || "off";
@@ -651,12 +666,14 @@ class ZendureScheduleCard extends HTMLElement {
           Number.isFinite(powers[i]) && powers[i] >= 0
             ? powers[i]
             : this._defaultPower(),
-        soc: Number.isFinite(socs[i])
-          ? this._clampSoc(socs[i], fallbackSoc)
-          : fallbackSoc,
-        soc_min: Number.isFinite(mins[i])
-          ? this._clampSoc(mins[i], fallbackMin)
-          : fallbackMin,
+        soc:
+          i < socPairs.length && socPairs[i] !== ""
+            ? this._decodeSocPair(socPairs[i], fallbackSoc)
+            : fallbackSoc,
+        soc_min:
+          i < minPairs.length && minPairs[i] !== ""
+            ? this._decodeSocPair(minPairs[i], fallbackMin)
+            : fallbackMin,
       });
     }
     return {
