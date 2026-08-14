@@ -107,7 +107,7 @@ colors:
   idle: "#7fa6b8"
 ```
 
-Alle UI-velden zijn ook bewerkbaar in de visuele HA-card-editor (inclusief color pickers). Entity-pickers zitten daar niet meer.
+Alle UI-velden zijn ook bewerkbaar in de visuele HA-card-editor (inclusief color pickers).
 
 ### Card YAML-velden
 
