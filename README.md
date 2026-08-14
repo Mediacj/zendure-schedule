@@ -44,7 +44,7 @@ Zie ook het artikel op energienerds.nl over deze integratie!
   <a href="https://my.home-assistant.io/redirect/hacs_repository/?repository=zendure-schedule&category=integration&owner=Mediacj" target="_blank" rel="noreferrer noopener"><img src="https://my.home-assistant.io/badges/hacs_repository.svg" alt="Open your Home Assistant instance and open a repository inside the Home Assistant Community Store." /></a>
 </p>
 
-Klik op de knop hierboven om de repository direct in HACS te openen (Home Assistant moet bereikbaar zijn vanaf dit apparaat).
+Klik op de knop hierboven om de repository direct in HACS te openen (Home Assistant moet bereikbaar zijn vanaf dit apparaat). Ga na het downloaden verder naar stap 2 hieronder.
 
 ### Handmatig / via HACS-custom repository
 
@@ -56,18 +56,10 @@ Klik op de knop hierboven om de repository direct in HACS te openen (Home Assist
    - AC mode select
    - Laadvermogen (number)
    - Ontlaadvermogen (number)
-
-Lovelace laadt de card **één keer** via `extra_module_url`:
-
-- `/local/zendure-schedule/zendure-schedule.js`
-
-Bestanden worden bij start naar `config/www/zendure-schedule/` gekopieerd. Oude URL `/zendure_schedule/...` blijft als fallback.
-
-Geen aparte Lovelace-resource nodig (die veroorzaakte een dubbele load). Bij upgrade ruimt de integratie oude Zendure-resources onder **Dashboard → Bronnen** op; controleer eventueel handmatig of `/local/zendure-schedule/...` daar niet meer staat.
+   - Maximale SOC
+   - Minimale SOC
 
 Na update: **HA herstarten**, hard refresh. In de console hoort `ZENDURE-SCHEDULE 1.0.46` te staan (geen tweede load).
-
-
 
 ## Dashboard card
 
