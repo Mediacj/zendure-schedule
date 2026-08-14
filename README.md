@@ -16,7 +16,7 @@
 
 ---
 
-Zelfstandige custom integration met 24u-planner voor Zendure (NOM / SLM-O / SLM-L / laden / ontladen).
+**Home Assistant** custom integration met 24u-planner voor **Zendure** (NOM / SLM-O / SLM-L / laden / ontladen).
 
 - Eigen Lovelace-card
 - Backend past elk uur toe — geen aparte automation nodig
