@@ -3,7 +3,7 @@
  * Resource / extra_module_url: /local/zendure-schedule/zendure-schedule.js
  */
 
-const CARD_VERSION = "1.0.44";
+const CARD_VERSION = "1.0.45";
 const LOGO_URL = `/local/zendure-schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
@@ -1319,11 +1319,19 @@ class ZendureScheduleCard extends HTMLElement {
     this._renderNextMode();
   }
 
+  _formatWatts(raw) {
+    const n = parseFloat(raw);
+    if (!Number.isFinite(n)) return null;
+    return `${Math.round(n)}W`;
+  }
+
   _renderNextMode() {
     if (!this._els?.planValue || !this._schedule) return;
     const nextHour = (new Date().getHours() + 1) % 24;
     const slot = this._schedule[nextHour] || this._defaultSlot();
-    this._els.planValue.textContent = this._modeLabel(slot.mode);
+    const mode = slot.mode || "off";
+    this._els.planValue.textContent = this._modeLabel(mode);
+    this._els.planValue.dataset.mode = mode;
   }
 
   _highlightCurrentHour() {
@@ -1419,12 +1427,29 @@ class ZendureScheduleCard extends HTMLElement {
     const st = this._hass?.states?.[this._config.entity];
     if (!st) {
       this._els.modeValue.textContent = "entity?";
+      this._els.modeValue.dataset.mode = "";
       return;
     }
     const mode = this._prettyMode(st.state);
     const dir = this._hass.states[this._config.direction_entity]?.state;
     const dirLower = String(dir || "").toLowerCase();
     let text = mode;
+    let colorMode = "off";
+
+    if (mode === "NOM") {
+      colorMode = "nom";
+    } else if (
+      mode === this._nomOTag() ||
+      mode === this._nomOLabel()
+    ) {
+      colorMode = "nom_o";
+    } else if (
+      mode === this._nomLTag() ||
+      mode === this._nomLLabel()
+    ) {
+      colorMode = "nom_l";
+    }
+
     // Laden/ontladen: operation=off + ac_mode — toon alleen laden/ontladen + W
     if (mode === "Off" && dir != null) {
       const isCharge =
@@ -1432,6 +1457,7 @@ class ZendureScheduleCard extends HTMLElement {
       const isDischarge =
         dirLower === "output" || dirLower === "discharge";
       const d = isCharge ? "laden" : isDischarge ? "ontladen" : dir;
+      colorMode = isCharge ? "charge" : isDischarge ? "discharge" : "off";
       const powerEntity = isCharge
         ? this._chargePowerEntity()
         : isDischarge
@@ -1440,17 +1466,12 @@ class ZendureScheduleCard extends HTMLElement {
       const power = powerEntity
         ? this._hass.states[powerEntity]?.state
         : null;
-      text = power != null ? `${d} ${power}W` : String(d);
+      const watts = this._formatWatts(power);
+      text = watts != null ? `${d} ${watts}` : String(d);
     }
+
     this._els.modeValue.textContent = text;
-    this._els.modeValue.classList.toggle(
-      "is-self",
-      mode === "NOM" ||
-        mode === this._nomOTag() ||
-        mode === this._nomLTag() ||
-        mode === this._nomOLabel() ||
-        mode === this._nomLLabel()
-    );
+    this._els.modeValue.dataset.mode = colorMode;
   }
 
   async _selectOption(entityId, wanted) {
@@ -1790,9 +1811,39 @@ class ZendureScheduleCard extends HTMLElement {
         color: #eaf6ff; font-size: 12px;
         text-shadow: 0 0 6px rgba(120,200,255,0.35);
       }
-      .mode-value.is-self {
+      .mode-value,
+      .plan-value {
+        font-weight: 700;
+      }
+      .mode-value[data-mode="nom"],
+      .plan-value[data-mode="nom"] {
         color: var(--color-nom);
-        text-shadow: 0 0 8px rgba(76,175,80,0.55);
+        text-shadow: 0 0 8px color-mix(in srgb, var(--color-nom) 55%, transparent);
+      }
+      .mode-value[data-mode="nom_o"],
+      .plan-value[data-mode="nom_o"] {
+        color: var(--color-nom-o);
+        text-shadow: 0 0 8px color-mix(in srgb, var(--color-nom-o) 55%, transparent);
+      }
+      .mode-value[data-mode="nom_l"],
+      .plan-value[data-mode="nom_l"] {
+        color: var(--color-nom-l);
+        text-shadow: 0 0 8px color-mix(in srgb, var(--color-nom-l) 55%, transparent);
+      }
+      .mode-value[data-mode="charge"],
+      .plan-value[data-mode="charge"] {
+        color: var(--color-charge);
+        text-shadow: 0 0 8px color-mix(in srgb, var(--color-charge) 55%, transparent);
+      }
+      .mode-value[data-mode="discharge"],
+      .plan-value[data-mode="discharge"] {
+        color: var(--color-discharge);
+        text-shadow: 0 0 8px color-mix(in srgb, var(--color-discharge) 55%, transparent);
+      }
+      .mode-value[data-mode="off"],
+      .plan-value[data-mode="off"] {
+        color: var(--color-idle);
+        text-shadow: none;
       }
       .brush-row {
         display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -1961,6 +2012,9 @@ class ZendureScheduleCard extends HTMLElement {
         font-weight: 700;
         color: #eaf6ff;
         font-size: 13px;
+      }
+      .editor-mode {
+        font-weight: 700;
       }
       .editor-mode[data-mode="nom"] { color: var(--color-nom); }
       .editor-mode[data-mode="nom_o"] { color: var(--color-nom-o); }
