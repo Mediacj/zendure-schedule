@@ -3,7 +3,7 @@
  * Resource / extra_module_url: /local/zendure-schedule/zendure-schedule.js
  */
 
-const CARD_VERSION = "1.0.47";
+const CARD_VERSION = "1.0.48";
 const LOGO_URL = `/local/zendure-schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
@@ -1550,15 +1550,16 @@ class ZendureScheduleCard extends HTMLElement {
 
   async _requestBackendApply() {
     this._syncEnabledFromHass();
-    if (!this._enabled || !this._hass) return;
+    if (!this._hass) return;
+    // Schema altijd opslaan — ook als de planner UIT staat.
+    // Toepassen op Zendure alleen als planner AAN staat (backend + apply_now).
     this._persist();
-    // Schema-write (text.set_value) past al toe met het NIEUWE uurplan.
-    // Geen aparte apply_now daarna: die race herstelde eerder de oude mode.
     if (this._storageEntityId()) {
       await this._flushStorageWrite();
       return;
     }
     this._flushStorageWrite();
+    if (!this._enabled) return;
     try {
       await this._hass.callService("zendure_schedule", "apply_now", {});
     } catch (err) {
