@@ -29,6 +29,9 @@ Zie ook het artikel op <a href="https://energienerds.nl/index.php/2026/08/15/hom
 - werkt met alle ondersteunde batterijen van de <a href="https://github.com/Zendure/Zendure-HA">Home Assistant Zendure integratie</a> zoals de <a href="https://energienerds.nl/index.php/2026/02/10/zendure-solarflow-2400-ac-review-de-ultieme-ac-stekkerbatterij-voor-salderingsvrij-zelfverbruik" target="_blank" rel="noopener">Zendure SolarFlow 2400 AC+</a>.
 - Geïnstalleerde <a href="https://github.com/Zendure/Zendure-HA">Home Assistant Zendure integratie</a>
 
+**Let op:** De modi Slim opladen/ontladen en Smart gelden altijd voor alle Zendure-batterijen binnen de officiële integratie. Wil je een specifieke batterij buiten de aansturing houden, dan moet je deze op ‘Niet gebruikt’ zetten binnen de Zendure integratie.
+Het direct aansturen met een specifiek laad- of ontlaadvermogen geldt uitsluitend voor de batterij die je in de Energienerds-configuratie hebt geselecteerd.
+
 ## Schermvoorbeeld
 
 <p align="center">
