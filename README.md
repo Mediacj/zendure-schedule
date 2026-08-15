@@ -23,7 +23,7 @@
 - Kleuren en alle dashboard velden via visuele editor te bewerken
 - Per uur min/max SOC instelbaar (optie SOC weergeven)
 
-Zie ook het artikel op energienerds.nl over deze integratie!
+Zie ook het artikel op <a href="https://energienerds.nl/index.php/2026/08/15/home-assistant-integratie-anker-solix-zendure" target="_blank" rel="noopener"> energienerds.nl</a> over deze integratie!
 
 ## Randvoorwaarden
 - werkt met alle ondersteunde batterijen van de <a href="https://github.com/Zendure/Zendure-HA">Home Assistant Zendure integratie</a> waaronder: <a href="https://energienerds.nl/index.php/2026/02/10/zendure-solarflow-2400-ac-review-de-ultieme-ac-stekkerbatterij-voor-salderingsvrij-zelfverbruik" target="_blank" rel="noopener">Zendure SolarFlow 2400 AC+</a> en de <a href="https://energienerds.nl/index.php/2026/05/08/zendure-solarflow-mix-review" target="_blank" rel="noopener">SolarFlow Mix serie</a>
