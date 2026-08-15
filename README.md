@@ -55,7 +55,7 @@ Klik op de knop hierboven om de repository direct in HACS te openen (Home Assist
 
 1. Installeer via HACS (custom repository) of kopieer `custom_components/zendure_schedule` naar je Home Assistant `custom_components`-map.
 2. Herstart Home Assistant.
-3. Ga naar **Instellingen → Apparaten en services → Integratie toevoegen** en zoek **Zendure Schedule**.
+3. Ga naar **Instellingen → Apparaten en diensten → Integratie toevoegen** en zoek **Zendure Schedule**.
 4. Kies zelf je entities (velden starten leeg):
    - Bedrijfsmodus -> select.zendure_manager_operation (of gelijkwaardig)
    - AC bedrijfsmodus -> select.*_ac_mode
