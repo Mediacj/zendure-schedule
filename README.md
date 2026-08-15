@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Mediacj/zendure-schedule/main/images/energienerds.png" alt="Energienerds" width="140">
+  <a href="https://energienerds.nl/" target="_blank" rel="noopener"><img src="https://raw.githubusercontent.com/Mediacj/anker-schedule/main/images/energienerds.png" target="_blank" alt="Energienerds" width="140"></a>
 </p>
 
 <h1 align="center">Zendure Schedule</h1>
