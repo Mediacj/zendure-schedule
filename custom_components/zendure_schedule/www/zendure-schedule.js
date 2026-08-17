@@ -3,7 +3,7 @@
  * Resource / extra_module_url: /local/zendure-schedule/zendure-schedule.js
  */
 
-const CARD_VERSION = "1.0.48";
+const CARD_VERSION = "1.0.49";
 const LOGO_URL = `/local/zendure-schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
@@ -1754,6 +1754,9 @@ class ZendureScheduleCard extends HTMLElement {
   _css() {
     return `
       :host { display: block; }
+      ha-card {
+        border-color: color-mix(in srgb, var(--divider-color) 50%, transparent);
+      }
       .panel { background: transparent; font-family: "Roboto", sans-serif; }
       .screen {
         --color-nom: #1b8a3a;
