@@ -2353,12 +2353,18 @@ class ZendureScheduleCard extends HTMLElement {
       .hour.selected {
         outline: 2px solid rgba(63,182,255,1);
         outline-offset: 1px;
+        box-shadow: 0 0 12px rgba(63,182,255,0.55);
+        z-index: 2;
       }
       .hour.current.selected {
-        outline: 3px solid color-mix(in srgb, var(--color-current) 95%, transparent);
+        outline: 3px solid #3fb6ff;
+        outline-offset: 2px;
         box-shadow:
-          0 0 0 2px rgba(63,182,255,0.85),
-          0 0 14px color-mix(in srgb, var(--color-current) 45%, transparent);
+          0 0 0 3px color-mix(in srgb, var(--color-current) 95%, transparent),
+          0 0 0 6px rgba(63,182,255,0.45),
+          0 0 18px rgba(63,182,255,0.85);
+        filter: brightness(1.14);
+        z-index: 3;
       }
       .screen.scheduler-off .hour.mode-nom,
       .screen.scheduler-off .hour.mode-nom_o,
