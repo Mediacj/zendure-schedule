@@ -495,6 +495,124 @@ class ZendureScheduleCard extends HTMLElement {
     this._renderEditorPanel();
   }
 
+  _nordpoolPriceUnit() {
+    const entityId = this._nordpoolEntityId();
+    const attrs = this._hass?.states?.[entityId]?.attributes || {};
+    return (
+      attrs.unit_of_measurement ||
+      (attrs.price_in_cents ? "c/kWh" : "€/kWh")
+    );
+  }
+
+  _formatNordpoolPrice(price) {
+    const n = Number(price);
+    if (!Number.isFinite(n)) return "—";
+    const rounded = Math.round(n * 1000) / 1000;
+    const text =
+      Math.abs(rounded - Math.round(rounded)) < 1e-9
+        ? String(Math.round(rounded))
+        : String(rounded);
+    return `${text} ${this._nordpoolPriceUnit()}`;
+  }
+
+  _nordpoolRankSets(prices) {
+    const n = Math.min(this._aantalUren(), prices.length);
+    const byAsc = [...prices].sort((a, b) => a.price - b.price);
+    return {
+      cheap: new Set(byAsc.slice(0, n).map((row) => row.hour)),
+      expensive: new Set(byAsc.slice(-n).map((row) => row.hour)),
+    };
+  }
+
+  _hideNordpoolTip() {
+    this._els?.nordpoolTip?.classList.add("hidden");
+  }
+
+  _showNordpoolTip(col, price, hour) {
+    const tip = this._els?.nordpoolTip;
+    const chart = this._els?.nordpoolChart;
+    if (!tip || !chart || !col) return;
+    tip.textContent = `${String(hour).padStart(2, "0")}:00 · ${this._formatNordpoolPrice(price)}`;
+    tip.classList.remove("hidden");
+    const chartBox = chart.getBoundingClientRect();
+    const colBox = col.getBoundingClientRect();
+    const tipW = tip.offsetWidth || 120;
+    let left = colBox.left - chartBox.left + colBox.width / 2 - tipW / 2;
+    left = Math.max(4, Math.min(left, chartBox.width - tipW - 4));
+    tip.style.left = `${left}px`;
+    tip.style.top = `${Math.max(4, colBox.top - chartBox.top - 28)}px`;
+  }
+
+  _renderNordpoolChart() {
+    const wrap = this._els?.nordpoolChart;
+    const bars = this._els?.nordpoolBars;
+    if (!wrap || !bars) return;
+
+    const prices = this._nordpoolHourlyPrices();
+    if (!prices?.length) {
+      wrap.classList.add("hidden");
+      bars.innerHTML = "";
+      this._lastNordpoolChartSig = "";
+      this._hideNordpoolTip();
+      return;
+    }
+
+    const byHour = new Map(prices.map((row) => [row.hour, row.price]));
+    const vals = prices.map((row) => row.price);
+    const min = Math.min(...vals);
+    const max = Math.max(...vals);
+    const span = Math.max(0.001, max - min);
+    const { cheap, expensive } = this._nordpoolRankSets(prices);
+    const nowHour = new Date().getHours();
+    const sig = `${this._nordpoolEntityId()}|${this._aantalUren()}|${nowHour}|${prices
+      .map((row) => `${row.hour}:${row.price}`)
+      .join(",")}`;
+    if (
+      sig === this._lastNordpoolChartSig &&
+      bars.childElementCount === 24 &&
+      !wrap.classList.contains("hidden")
+    ) {
+      return;
+    }
+    this._lastNordpoolChartSig = sig;
+
+    if (this._els.nordpoolUnit) {
+      this._els.nordpoolUnit.textContent = this._nordpoolPriceUnit();
+    }
+
+    bars.innerHTML = "";
+    for (let h = 0; h < 24; h++) {
+      const price = byHour.get(h);
+      const col = document.createElement("div");
+      col.className = "np-col";
+      if (!Number.isFinite(price)) {
+        col.classList.add("is-empty");
+      } else {
+        const pct = 12 + ((price - min) / span) * 88;
+        col.style.setProperty("--h", `${pct}%`);
+        if (cheap.has(h) && expensive.has(h)) col.classList.add("is-both");
+        else if (cheap.has(h)) col.classList.add("is-cheap");
+        else if (expensive.has(h)) col.classList.add("is-expensive");
+        col.title = `${String(h).padStart(2, "0")}:00 · ${this._formatNordpoolPrice(price)}`;
+        col.addEventListener("pointerenter", () => {
+          this._showNordpoolTip(col, price, h);
+        });
+        col.addEventListener("pointermove", () => {
+          this._showNordpoolTip(col, price, h);
+        });
+        col.addEventListener("pointerleave", () => this._hideNordpoolTip());
+        col.addEventListener("click", () => {
+          this._toggleHourSelection(h);
+        });
+      }
+      if (h === nowHour) col.classList.add("is-now");
+      col.innerHTML = `<div class="np-bar"></div><div class="np-label">${String(h).padStart(2, "0")}</div>`;
+      bars.appendChild(col);
+    }
+
+    wrap.classList.remove("hidden");
+  }
+
   _defaultPower() {
     return this._configuredPower("default_power", 500);
   }
@@ -1031,6 +1149,15 @@ class ZendureScheduleCard extends HTMLElement {
               <button type="button" class="selection-clear hidden" data-action="clear-selection">Wis selectie</button>
             </div>
           </div>
+
+          <div class="nordpool-chart hidden" aria-label="Nord Pool prijzen vandaag">
+            <div class="nordpool-chart-head">
+              <span class="nordpool-chart-title">Nord Pool vandaag</span>
+              <span class="nordpool-chart-unit"></span>
+            </div>
+            <div class="nordpool-chart-bars" role="img"></div>
+            <div class="nordpool-chart-tip hidden"></div>
+          </div>
         </div>
       </div>
     `;
@@ -1073,6 +1200,10 @@ class ZendureScheduleCard extends HTMLElement {
       applyBtn: card.querySelector(".ok-btn"),
       brushRow: card.querySelector(".brush-row"),
       selectionClear: card.querySelector(".selection-clear"),
+      nordpoolChart: card.querySelector(".nordpool-chart"),
+      nordpoolBars: card.querySelector(".nordpool-chart-bars"),
+      nordpoolUnit: card.querySelector(".nordpool-chart-unit"),
+      nordpoolTip: card.querySelector(".nordpool-chart-tip"),
     };
 
     this._els.toggleBtn.addEventListener("click", () => {
@@ -1468,6 +1599,7 @@ class ZendureScheduleCard extends HTMLElement {
     this._els.selectionClear?.classList.toggle("hidden", !armed);
 
     this._renderNextMode();
+    this._renderNordpoolChart();
   }
 
   _formatWatts(raw) {
@@ -2208,6 +2340,83 @@ class ZendureScheduleCard extends HTMLElement {
         display: flex; align-items: flex-start; justify-content: space-between;
         gap: 12px; margin-top: 14px;
       }
+      .nordpool-chart {
+        position: relative;
+        margin-top: 14px;
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px 10px 8px;
+        border-radius: 10px;
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(63,182,255,0.28);
+      }
+      .nordpool-chart.hidden { display: none; }
+      .nordpool-chart-head {
+        display: flex; justify-content: space-between; align-items: baseline;
+        gap: 8px; margin-bottom: 8px;
+        color: #d8e6ee; font-size: 11px; letter-spacing: 0.4px;
+      }
+      .nordpool-chart-title { font-weight: 700; color: #eaf6ff; }
+      .nordpool-chart-unit { color: #b7d0de; opacity: 0.9; }
+      .nordpool-chart-bars {
+        display: grid;
+        grid-template-columns: repeat(24, minmax(0, 1fr));
+        gap: 3px;
+        height: 88px;
+        align-items: end;
+      }
+      .np-col {
+        height: 100%;
+        display: flex; flex-direction: column;
+        justify-content: flex-end; align-items: center;
+        gap: 3px; min-width: 0; cursor: pointer;
+      }
+      .np-col.is-empty { cursor: default; opacity: 0.35; }
+      .np-bar {
+        width: 100%;
+        max-width: 14px;
+        height: var(--h, 20%);
+        border-radius: 3px 3px 1px 1px;
+        background: rgba(159,196,214,0.45);
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
+        transition: filter 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+      }
+      .np-col.is-cheap .np-bar {
+        background: #1bdf62;
+        box-shadow: 0 0 10px rgba(27,223,98,0.55);
+      }
+      .np-col.is-expensive .np-bar {
+        background: #ff3b4a;
+        box-shadow: 0 0 10px rgba(255,59,74,0.55);
+      }
+      .np-col.is-both .np-bar {
+        background: linear-gradient(180deg, #ff3b4a 0%, #1bdf62 100%);
+        box-shadow: 0 0 10px rgba(255,180,40,0.45);
+      }
+      .np-col.is-now .np-bar {
+        outline: 2px solid rgba(234,246,255,0.9);
+        outline-offset: 1px;
+      }
+      .np-col:hover .np-bar { filter: brightness(1.18); }
+      .np-label {
+        font-size: 8px; line-height: 1; color: #9fc4d6;
+        font-variant-numeric: tabular-nums;
+      }
+      .nordpool-chart-tip {
+        position: absolute;
+        z-index: 5;
+        pointer-events: none;
+        padding: 5px 8px;
+        border-radius: 6px;
+        background: rgba(6,14,22,0.94);
+        border: 1px solid rgba(63,182,255,0.45);
+        color: #eaf6ff;
+        font-size: 11px;
+        font-weight: 600;
+        white-space: nowrap;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+      }
+      .nordpool-chart-tip.hidden { display: none; }
       .actions {
         display: flex; flex-wrap: wrap; gap: 8px; margin-top: 0;
         min-width: 0;
