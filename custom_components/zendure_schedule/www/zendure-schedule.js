@@ -163,7 +163,9 @@ const DEFAULTS = {
   enabled: true,
   // 0 = dekking (geen transparantie), 100 = volledig doorzichtig
   transparantie: 15,
-  // Aantal uren om te selecteren via Nord Pool Goedkoopste/Duurste
+  // Toon EPEX-grafiek + Goedkoopste/Duurste
+  dynamische_energieprijzen: true,
+  // Aantal uren om te selecteren via Goedkoopste/Duurste
   aantal_uren: 4,
   colors: {
     nom: "#1b8a3a",
@@ -199,8 +201,10 @@ class ZendureScheduleCard extends HTMLElement {
       ENTITY_CONFIG_KEYS.forEach((key) => {
         this._config[key] = "";
       });
+      this._userConfig = stripEntityConfig(clean);
       this._config.transparantie = this._transparantie();
       delete this._config.transparency;
+      this._config.dynamische_energieprijzen = this._dynamischeEnergieprijzen();
       this._config.aantal_uren = this._aantalUren();
       this._selectedHours =
         this._selectedHours instanceof Set ? this._selectedHours : new Set();
@@ -400,12 +404,56 @@ class ZendureScheduleCard extends HTMLElement {
     return Math.max(0, Math.min(100, Math.round(n)));
   }
 
-  /** Aantal uren voor Nord Pool Goedkoopste/Duurste-selectie. */
+  /** Toon EPEX-grafiek en Goedkoopste/Duurste-knoppen. */
+  _dynamischeEnergieprijzen() {
+    if (this._config?.dynamische_energieprijzen === false) return false;
+    if (this._config?.dynamische_energieprijzen === true) return true;
+    return DEFAULTS.dynamische_energieprijzen;
+  }
+
+  /** Aantal uren voor Goedkoopste/Duurste-selectie. */
   _aantalUren() {
     const raw = this._config?.aantal_uren ?? DEFAULTS.aantal_uren;
     const n = Number(raw);
     if (!Number.isFinite(n)) return DEFAULTS.aantal_uren;
     return Math.max(1, Math.min(24, Math.round(n)));
+  }
+
+  _setAantalUrenFromUi(raw, { persist = false } = {}) {
+    const value = Math.max(1, Math.min(24, Math.round(Number(raw))));
+    if (!Number.isFinite(value)) return;
+    this._config.aantal_uren = value;
+    this._userConfig = stripEntityConfig({
+      ...(this._userConfig || {}),
+      aantal_uren: value,
+    });
+    if (this._els?.nordpoolHoursSlider) {
+      this._els.nordpoolHoursSlider.value = String(value);
+    }
+    if (this._els?.nordpoolHoursValue) {
+      this._els.nordpoolHoursValue.textContent = String(value);
+    }
+    this._lastNordpoolChartSig = "";
+    this._renderNordpoolChart();
+    if (persist) {
+      this.dispatchEvent(
+        new CustomEvent("config-changed", {
+          detail: { config: { ...this._userConfig } },
+          bubbles: true,
+          composed: true,
+        })
+      );
+    }
+  }
+
+  _syncNordpoolHoursUi() {
+    const n = this._aantalUren();
+    const slider = this._els?.nordpoolHoursSlider;
+    const valueEl = this._els?.nordpoolHoursValue;
+    if (slider && this.shadowRoot?.activeElement !== slider) {
+      slider.value = String(n);
+    }
+    if (valueEl) valueEl.textContent = String(n);
   }
 
   _nordpoolEntityId() {
@@ -548,6 +596,14 @@ class ZendureScheduleCard extends HTMLElement {
     const bars = this._els?.nordpoolBars;
     if (!wrap || !bars) return;
 
+    if (!this._dynamischeEnergieprijzen()) {
+      wrap.classList.add("hidden");
+      bars.innerHTML = "";
+      this._lastNordpoolChartSig = "";
+      this._hideNordpoolTip();
+      return;
+    }
+
     const prices = this._nordpoolHourlyPrices();
     if (!prices?.length) {
       wrap.classList.add("hidden");
@@ -610,6 +666,7 @@ class ZendureScheduleCard extends HTMLElement {
       bars.appendChild(col);
     }
 
+    this._syncNordpoolHoursUi();
     wrap.classList.remove("hidden");
   }
 
@@ -1140,8 +1197,8 @@ class ZendureScheduleCard extends HTMLElement {
           <div class="actions-row">
             <div class="actions">
               <button type="button" data-action="all-nom">Alles NOM</button>
-              <button type="button" data-action="pick-cheap">Goedkoopste</button>
-              <button type="button" data-action="pick-expensive">Duurste</button>
+              <button type="button" class="np-pick-btn" data-action="pick-cheap">Goedkoopste</button>
+              <button type="button" class="np-pick-btn" data-action="pick-expensive">Duurste</button>
               <button type="button" data-action="all-off">Alles uit</button>
               <button type="button" class="ok-btn hidden" data-action="save-ok">OK</button>
             </div>
@@ -1150,13 +1207,18 @@ class ZendureScheduleCard extends HTMLElement {
             </div>
           </div>
 
-          <div class="nordpool-chart hidden" aria-label="Nord Pool prijzen vandaag">
+          <div class="nordpool-chart hidden" aria-label="EPEX prijzen vandaag">
             <div class="nordpool-chart-head">
-              <span class="nordpool-chart-title">Nord Pool vandaag</span>
+              <span class="nordpool-chart-title">EPEX Vandaag</span>
               <span class="nordpool-chart-unit"></span>
             </div>
             <div class="nordpool-chart-bars" role="img"></div>
             <div class="nordpool-chart-tip hidden"></div>
+            <div class="nordpool-hours-row">
+              <label class="nordpool-hours-label" for="zs-np-hours">Aantal uren</label>
+              <input id="zs-np-hours" class="nordpool-hours-slider" type="range" min="1" max="24" step="1" value="4">
+              <span class="nordpool-hours-value">4</span>
+            </div>
           </div>
         </div>
       </div>
@@ -1204,7 +1266,20 @@ class ZendureScheduleCard extends HTMLElement {
       nordpoolBars: card.querySelector(".nordpool-chart-bars"),
       nordpoolUnit: card.querySelector(".nordpool-chart-unit"),
       nordpoolTip: card.querySelector(".nordpool-chart-tip"),
+      nordpoolHoursSlider: card.querySelector(".nordpool-hours-slider"),
+      nordpoolHoursValue: card.querySelector(".nordpool-hours-value"),
+      pickCheapBtn: card.querySelector('[data-action="pick-cheap"]'),
+      pickExpensiveBtn: card.querySelector('[data-action="pick-expensive"]'),
     };
+
+    this._els.nordpoolHoursSlider?.addEventListener("input", () => {
+      this._setAantalUrenFromUi(this._els.nordpoolHoursSlider.value);
+    });
+    this._els.nordpoolHoursSlider?.addEventListener("change", () => {
+      this._setAantalUrenFromUi(this._els.nordpoolHoursSlider.value, {
+        persist: true,
+      });
+    });
 
     this._els.toggleBtn.addEventListener("click", () => {
       this._onTogglePlanner();
@@ -1597,6 +1672,10 @@ class ZendureScheduleCard extends HTMLElement {
     this._refreshDirty();
     this._els.applyBtn?.classList.toggle("hidden", !this._dirty);
     this._els.selectionClear?.classList.toggle("hidden", !armed);
+
+    const dyn = this._dynamischeEnergieprijzen();
+    this._els.pickCheapBtn?.classList.toggle("hidden", !dyn);
+    this._els.pickExpensiveBtn?.classList.toggle("hidden", !dyn);
 
     this._renderNextMode();
     this._renderNordpoolChart();
@@ -2417,6 +2496,34 @@ class ZendureScheduleCard extends HTMLElement {
         box-shadow: 0 4px 14px rgba(0,0,0,0.35);
       }
       .nordpool-chart-tip.hidden { display: none; }
+      .nordpool-hours-row {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 10px;
+        align-items: center;
+        margin-top: 10px;
+        padding-top: 8px;
+        border-top: 1px solid rgba(255,255,255,0.1);
+      }
+      .nordpool-hours-label {
+        font-size: 11px;
+        font-weight: 600;
+        color: #d8e6ee;
+        letter-spacing: 0.3px;
+        white-space: nowrap;
+      }
+      .nordpool-hours-slider {
+        width: 100%;
+        accent-color: #3fb6ff;
+        cursor: pointer;
+      }
+      .nordpool-hours-value {
+        min-width: 1.6em;
+        text-align: right;
+        font-size: 12px;
+        font-weight: 700;
+        color: #eaf6ff;
+      }
       .actions {
         display: flex; flex-wrap: wrap; gap: 8px; margin-top: 0;
         min-width: 0;
@@ -2562,6 +2669,13 @@ class ZendureScheduleEditor extends HTMLElement {
             <input type="checkbox" data-key="show_soc">
             SOC weergeven
           </label>
+          <label class="check-row">
+            <input type="checkbox" data-key="dynamische_energieprijzen">
+            Dynamische energieprijzen
+          </label>
+          <div class="hint">
+            Toont EPEX-grafiek en knoppen Goedkoopste / Duurste. Nord Pool-entity stel je in bij de integratie.
+          </div>
           <div class="row">
             <label>Transparantie achtergrond (%) (transparantie)</label>
             <input type="number" data-key="transparantie" min="0" max="100" step="1" placeholder="15">
@@ -2570,11 +2684,11 @@ class ZendureScheduleEditor extends HTMLElement {
             0 = dekking (geen transparantie), 100 = volledig doorzichtig. Standaard 15.
           </div>
           <div class="row">
-            <label>Aantal uren Nord Pool (aantal_uren)</label>
+            <label>Aantal uren (aantal_uren)</label>
             <input type="number" data-key="aantal_uren" min="1" max="24" step="1" placeholder="4">
           </div>
           <div class="hint">
-            Voor knoppen Goedkoopste / Duurste. Nord Pool-entity stel je in bij de integratie.
+            Voor Goedkoopste / Duurste en de groene/rode markering in de grafiek. Ook via slider onder de grafiek.
           </div>
           <div class="hint">
             Entities (operation, vermogen, SOC, schema) komen uit de
@@ -2746,7 +2860,7 @@ class ZendureScheduleEditor extends HTMLElement {
         });
       });
 
-      ["enabled", "auto_apply", "show_soc"].forEach((key) => {
+      ["enabled", "auto_apply", "show_soc", "dynamische_energieprijzen"].forEach((key) => {
         const input = this.querySelector(`input[data-key="${key}"]`);
         if (!input) return;
         input.addEventListener("change", () => {
@@ -2844,7 +2958,7 @@ class ZendureScheduleEditor extends HTMLElement {
       if (input.value !== String(val)) input.value = val;
     });
 
-    ["enabled", "auto_apply", "show_soc"].forEach((key) => {
+    ["enabled", "auto_apply", "show_soc", "dynamische_energieprijzen"].forEach((key) => {
       const input = this.querySelector(`input[data-key="${key}"]`);
       if (!input) return;
       const checked =
@@ -2852,7 +2966,9 @@ class ZendureScheduleEditor extends HTMLElement {
           ? !!this._raw.auto_apply
           : key === "show_soc"
             ? !!this._config.show_soc
-            : !!this._config.enabled;
+            : key === "dynamische_energieprijzen"
+              ? this._config.dynamische_energieprijzen !== false
+              : !!this._config.enabled;
       if (input.checked !== checked) input.checked = checked;
     });
 
