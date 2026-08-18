@@ -145,6 +145,8 @@ Alle UI-velden zijn ook bewerkbaar in de visuele HA-card-editor (inclusief color
 | `colors.discharge` | hex | `#ff9800` | Kleur ontladen |
 | `colors.current` | hex | `#eaf6ff` | Accent huidig uur |
 | `colors.idle` | hex | `#7fa6b8` | Kleur uit/idle |
+| `transparantie` | number | `15` | (0–100%): mate van doorzichtigheid van de card-achtergrond|
+
 
 Entities wijzig je in **Instellingen → Apparaten & diensten → Zendure Schedule** (niet in de card-YAML).
 
