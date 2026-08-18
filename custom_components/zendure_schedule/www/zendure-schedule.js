@@ -3,7 +3,7 @@
  * Resource / extra_module_url: /local/zendure-schedule/zendure-schedule.js
  */
 
-const CARD_VERSION = "1.0.50";
+const CARD_VERSION = "1.0.51";
 const LOGO_URL = `/local/zendure-schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
@@ -160,6 +160,8 @@ const DEFAULTS = {
   power_step: 50,
   title: "ZENDURE PLANNER",
   enabled: true,
+  // 0 = dekking (geen transparantie), 100 = volledig doorzichtig
+  transparantie: 15,
   colors: {
     nom: "#1b8a3a",
     nom_o: "#00e5c0",
@@ -194,6 +196,8 @@ class ZendureScheduleCard extends HTMLElement {
       ENTITY_CONFIG_KEYS.forEach((key) => {
         this._config[key] = "";
       });
+      this._config.transparantie = this._transparantie();
+      delete this._config.transparency;
       this._selectedHours =
         this._selectedHours instanceof Set ? this._selectedHours : new Set();
       this._activeMode = this._activeMode ?? null;
@@ -375,6 +379,20 @@ class ZendureScheduleCard extends HTMLElement {
     if (raw === undefined || raw === null || raw === "") return fallback;
     const n = Number(raw);
     return Number.isFinite(n) ? n : fallback;
+  }
+
+  /** Card-achtergrondtransparantie 0–100% (0 = dekking, 100 = doorzichtig). */
+  _transparantie() {
+    const raw =
+      this._config?.transparantie ??
+      this._config?.transparency ??
+      DEFAULTS.transparantie;
+    const n =
+      typeof raw === "string"
+        ? parseFloat(String(raw).replace("%", "").trim())
+        : Number(raw);
+    if (!Number.isFinite(n)) return DEFAULTS.transparantie;
+    return Math.max(0, Math.min(100, Math.round(n)));
   }
 
   _defaultPower() {
@@ -1307,6 +1325,16 @@ class ZendureScheduleCard extends HTMLElement {
     this._els.screen.style.setProperty("--color-discharge", c.discharge);
     this._els.screen.style.setProperty("--color-current", c.current);
     this._els.screen.style.setProperty("--color-idle", c.idle);
+    const opacity = (100 - this._transparantie()) / 100;
+    this._els.screen.style.setProperty("--bg-opacity", String(opacity));
+    this._els.screen.style.setProperty(
+      "--bg-opacity-soft",
+      String(Math.max(0, opacity - 0.1))
+    );
+    this._els.screen.style.setProperty(
+      "--bg-glow",
+      String(0.22 * opacity)
+    );
     this._els.title.textContent = this._config.title || DEFAULTS.title;
     this._els.toggleBtn.classList.toggle("is-on", this._enabled);
     this._els.toggleLabel.textContent = this._enabled ? "AAN" : "UIT";
@@ -1765,12 +1793,15 @@ class ZendureScheduleCard extends HTMLElement {
         --color-discharge: #ff9800;
         --color-current: #eaf6ff;
         --color-idle: #9fc4d6;
+        --bg-opacity: 0.85;
+        --bg-opacity-soft: 0.75;
+        --bg-glow: 0.18;
         border-radius: var(--ha-card-border-radius, 12px);
         padding: 16px 18px 18px;
         overflow: hidden;
         background:
-          radial-gradient(120% 80% at 50% -20%, rgba(63,182,255,0.18), transparent 55%),
-          linear-gradient(180deg, rgba(8,18,28,0.88), rgba(5,12,20,0.78));
+          radial-gradient(120% 80% at 50% -20%, rgba(63,182,255, var(--bg-glow)), transparent 55%),
+          linear-gradient(180deg, rgba(8,18,28, var(--bg-opacity)), rgba(5,12,20, var(--bg-opacity-soft)));
       }
       .header {
         display: flex; align-items: center; justify-content: space-between;
@@ -2216,6 +2247,13 @@ class ZendureScheduleEditor extends HTMLElement {
             <input type="checkbox" data-key="show_soc">
             SOC weergeven
           </label>
+          <div class="row">
+            <label>Transparantie achtergrond (%) (transparantie)</label>
+            <input type="number" data-key="transparantie" min="0" max="100" step="1" placeholder="15">
+          </div>
+          <div class="hint">
+            0 = dekking (geen transparantie), 100 = volledig doorzichtig. Standaard 15.
+          </div>
           <div class="hint">
             Entities (operation, vermogen, SOC, schema) komen uit de
             Zendure Schedule-integratieconfiguratie — niet uit de card-YAML.
@@ -2347,6 +2385,7 @@ class ZendureScheduleEditor extends HTMLElement {
         power_step: 50,
         default_charge_soc: 100,
         default_discharge_soc: 10,
+        transparantie: 15,
       };
       Object.keys(numberKeys).forEach((key) => {
         const input = this.querySelector(`input[data-key="${key}"]`);
@@ -2355,13 +2394,26 @@ class ZendureScheduleEditor extends HTMLElement {
           if (input.value === "") return;
           const val = parseFloat(input.value);
           if (!Number.isFinite(val) || val < 0) return;
-          this._updateConfig({ [key]: val });
+          const clamped =
+            key === "transparantie" ||
+            key === "default_charge_soc" ||
+            key === "default_discharge_soc"
+              ? Math.max(0, Math.min(100, val))
+              : val;
+          this._updateConfig({ [key]: clamped });
         });
         input.addEventListener("change", () => {
           const val = parseFloat(input.value);
-          this._updateConfig({
-            [key]: Number.isFinite(val) && val >= 0 ? val : numberKeys[key],
-          });
+          let next =
+            Number.isFinite(val) && val >= 0 ? val : numberKeys[key];
+          if (
+            key === "transparantie" ||
+            key === "default_charge_soc" ||
+            key === "default_discharge_soc"
+          ) {
+            next = Math.max(0, Math.min(100, next));
+          }
+          this._updateConfig({ [key]: next });
         });
       });
 
@@ -2433,10 +2485,25 @@ class ZendureScheduleEditor extends HTMLElement {
       if (input.value !== String(val)) input.value = val;
     });
 
-    ["default_power", "max_power", "min_power", "power_step", "default_charge_soc", "default_discharge_soc"].forEach((key) => {
+    ["default_power", "max_power", "min_power", "power_step", "default_charge_soc", "default_discharge_soc", "transparantie"].forEach((key) => {
       const input = this.querySelector(`input[data-key="${key}"]`);
       if (!input || this._isFocused(input)) return;
-      const val = this._config[key];
+      const val =
+        key === "transparantie"
+          ? Math.max(
+              0,
+              Math.min(
+                100,
+                Math.round(
+                  Number(
+                    this._config.transparantie ??
+                      this._config.transparency ??
+                      DEFAULTS.transparantie
+                  )
+                )
+              )
+            )
+          : this._config[key];
       if (input.value !== String(val)) input.value = val;
     });
 
