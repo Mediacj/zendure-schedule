@@ -146,6 +146,9 @@ Alle UI-velden zijn ook bewerkbaar in de visuele HA-card-editor (inclusief color
 | `colors.current` | hex | `#eaf6ff` | Accent huidig uur |
 | `colors.idle` | hex | `#7fa6b8` | Kleur uit/idle |
 | `transparantie` | number | `15` | (0–100%): mate van doorzichtigheid van de card-achtergrond|
+| `dynamische_energieprijzen` | bool | `true` | wel of niet weergeven functies dynamische energieprijzen|
+
+
 
 
 Entities wijzig je in **Instellingen → Apparaten & diensten → Zendure Schedule** (niet in de card-YAML).
