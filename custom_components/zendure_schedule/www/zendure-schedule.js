@@ -3,7 +3,7 @@
  * Resource / extra_module_url: /local/zendure-schedule/zendure-schedule.js
  */
 
-const CARD_VERSION = "1.0.51";
+const CARD_VERSION = "1.0.52";
 const LOGO_URL = `/local/zendure-schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
@@ -28,6 +28,7 @@ const ENTITY_CONFIG_KEYS = [
   "discharge_power_entity",
   "charge_soc_entity",
   "discharge_soc_entity",
+  "nordpool_entity",
   "power_entity",
   "storage_entity",
   "planner_entity",
@@ -162,6 +163,8 @@ const DEFAULTS = {
   enabled: true,
   // 0 = dekking (geen transparantie), 100 = volledig doorzichtig
   transparantie: 15,
+  // Aantal uren om te selecteren via Nord Pool Goedkoopste/Duurste
+  aantal_uren: 4,
   colors: {
     nom: "#1b8a3a",
     nom_o: "#00e5c0",
@@ -198,6 +201,7 @@ class ZendureScheduleCard extends HTMLElement {
       });
       this._config.transparantie = this._transparantie();
       delete this._config.transparency;
+      this._config.aantal_uren = this._aantalUren();
       this._selectedHours =
         this._selectedHours instanceof Set ? this._selectedHours : new Set();
       this._activeMode = this._activeMode ?? null;
@@ -335,6 +339,7 @@ class ZendureScheduleCard extends HTMLElement {
       "discharge_power_entity",
       "charge_soc_entity",
       "discharge_soc_entity",
+      "nordpool_entity",
       "planner_entity",
     ].forEach((key) => {
       const attrKey = key === "entity" ? "operation_entity" : key;
@@ -393,6 +398,101 @@ class ZendureScheduleCard extends HTMLElement {
         : Number(raw);
     if (!Number.isFinite(n)) return DEFAULTS.transparantie;
     return Math.max(0, Math.min(100, Math.round(n)));
+  }
+
+  /** Aantal uren voor Nord Pool Goedkoopste/Duurste-selectie. */
+  _aantalUren() {
+    const raw = this._config?.aantal_uren ?? DEFAULTS.aantal_uren;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return DEFAULTS.aantal_uren;
+    return Math.max(1, Math.min(24, Math.round(n)));
+  }
+
+  _nordpoolEntityId() {
+    return this._config?.nordpool_entity || "";
+  }
+
+  /**
+   * Gemiddelde prijs per uur (0–23) uit Nord Pool today/raw_today.
+   * Ondersteunt 15-min (96) en uurlijkse (24) series.
+   */
+  _nordpoolHourlyPrices() {
+    const entityId = this._nordpoolEntityId();
+    if (!entityId || !this._hass?.states?.[entityId]) return null;
+    const attrs = this._hass.states[entityId].attributes || {};
+
+    if (Array.isArray(attrs.raw_today) && attrs.raw_today.length) {
+      const buckets = Array.from({ length: 24 }, () => []);
+      for (const row of attrs.raw_today) {
+        const start = row?.start ? new Date(row.start) : null;
+        const val = Number(row?.value);
+        if (!start || Number.isNaN(start.getTime()) || !Number.isFinite(val)) {
+          continue;
+        }
+        buckets[start.getHours()].push(val);
+      }
+      return buckets
+        .map((vals, hour) =>
+          vals.length
+            ? {
+                hour,
+                price: vals.reduce((a, b) => a + b, 0) / vals.length,
+              }
+            : null
+        )
+        .filter(Boolean);
+    }
+
+    const today = attrs.today;
+    if (!Array.isArray(today) || !today.length) return null;
+
+    if (today.length >= 96) {
+      const out = [];
+      for (let h = 0; h < 24; h++) {
+        const slice = today
+          .slice(h * 4, h * 4 + 4)
+          .map(Number)
+          .filter(Number.isFinite);
+        if (slice.length) {
+          out.push({
+            hour: h,
+            price: slice.reduce((a, b) => a + b, 0) / slice.length,
+          });
+        }
+      }
+      return out.length ? out : null;
+    }
+
+    if (today.length >= 24) {
+      const out = [];
+      for (let h = 0; h < 24; h++) {
+        const price = Number(today[h]);
+        if (Number.isFinite(price)) out.push({ hour: h, price });
+      }
+      return out.length ? out : null;
+    }
+
+    return null;
+  }
+
+  /** Selecteer de N goedkoopste of duurste uren van vandaag (geen modus zetten). */
+  _selectNordpoolHours(kind) {
+    const prices = this._nordpoolHourlyPrices();
+    if (!prices?.length) {
+      console.warn(
+        "Zendure Schedule Card: geen Nord Pool-prijzen beschikbaar",
+        this._nordpoolEntityId() || "(geen entity)"
+      );
+      return;
+    }
+    const n = Math.min(this._aantalUren(), prices.length);
+    const sorted = [...prices].sort((a, b) =>
+      kind === "expensive" ? b.price - a.price : a.price - b.price
+    );
+    this._selectedHours = new Set(sorted.slice(0, n).map((row) => row.hour));
+    this._activeMode = null;
+    this._syncChrome();
+    this._renderEditorPanel();
   }
 
   _defaultPower() {
@@ -922,6 +1022,8 @@ class ZendureScheduleCard extends HTMLElement {
           <div class="actions-row">
             <div class="actions">
               <button type="button" data-action="all-nom">Alles NOM</button>
+              <button type="button" data-action="pick-cheap">Goedkoopste</button>
+              <button type="button" data-action="pick-expensive">Duurste</button>
               <button type="button" data-action="all-off">Alles uit</button>
               <button type="button" class="ok-btn hidden" data-action="save-ok">OK</button>
             </div>
@@ -1041,6 +1143,10 @@ class ZendureScheduleCard extends HTMLElement {
           );
           this._clearSelection();
           this._stageScheduleChange();
+        } else if (action === "pick-cheap") {
+          this._selectNordpoolHours("cheap");
+        } else if (action === "pick-expensive") {
+          this._selectNordpoolHours("expensive");
         } else if (action === "all-off") {
           this._schedule = Array.from({ length: 24 }, () => this._defaultSlot());
           this._clearSelection();
@@ -2254,6 +2360,13 @@ class ZendureScheduleEditor extends HTMLElement {
           <div class="hint">
             0 = dekking (geen transparantie), 100 = volledig doorzichtig. Standaard 15.
           </div>
+          <div class="row">
+            <label>Aantal uren Nord Pool (aantal_uren)</label>
+            <input type="number" data-key="aantal_uren" min="1" max="24" step="1" placeholder="4">
+          </div>
+          <div class="hint">
+            Voor knoppen Goedkoopste / Duurste. Nord Pool-entity stel je in bij de integratie.
+          </div>
           <div class="hint">
             Entities (operation, vermogen, SOC, schema) komen uit de
             Zendure Schedule-integratieconfiguratie — niet uit de card-YAML.
@@ -2386,6 +2499,7 @@ class ZendureScheduleEditor extends HTMLElement {
         default_charge_soc: 100,
         default_discharge_soc: 10,
         transparantie: 15,
+        aantal_uren: 4,
       };
       Object.keys(numberKeys).forEach((key) => {
         const input = this.querySelector(`input[data-key="${key}"]`);
@@ -2394,12 +2508,16 @@ class ZendureScheduleEditor extends HTMLElement {
           if (input.value === "") return;
           const val = parseFloat(input.value);
           if (!Number.isFinite(val) || val < 0) return;
-          const clamped =
+          let clamped = val;
+          if (
             key === "transparantie" ||
             key === "default_charge_soc" ||
             key === "default_discharge_soc"
-              ? Math.max(0, Math.min(100, val))
-              : val;
+          ) {
+            clamped = Math.max(0, Math.min(100, val));
+          } else if (key === "aantal_uren") {
+            clamped = Math.max(1, Math.min(24, val));
+          }
           this._updateConfig({ [key]: clamped });
         });
         input.addEventListener("change", () => {
@@ -2412,6 +2530,8 @@ class ZendureScheduleEditor extends HTMLElement {
             key === "default_discharge_soc"
           ) {
             next = Math.max(0, Math.min(100, next));
+          } else if (key === "aantal_uren") {
+            next = Math.max(1, Math.min(24, next));
           }
           this._updateConfig({ [key]: next });
         });
@@ -2485,25 +2605,33 @@ class ZendureScheduleEditor extends HTMLElement {
       if (input.value !== String(val)) input.value = val;
     });
 
-    ["default_power", "max_power", "min_power", "power_step", "default_charge_soc", "default_discharge_soc", "transparantie"].forEach((key) => {
+    ["default_power", "max_power", "min_power", "power_step", "default_charge_soc", "default_discharge_soc", "transparantie", "aantal_uren"].forEach((key) => {
       const input = this.querySelector(`input[data-key="${key}"]`);
       if (!input || this._isFocused(input)) return;
-      const val =
-        key === "transparantie"
-          ? Math.max(
-              0,
-              Math.min(
-                100,
-                Math.round(
-                  Number(
-                    this._config.transparantie ??
-                      this._config.transparency ??
-                      DEFAULTS.transparantie
-                  )
-                )
+      let val = this._config[key];
+      if (key === "transparantie") {
+        val = Math.max(
+          0,
+          Math.min(
+            100,
+            Math.round(
+              Number(
+                this._config.transparantie ??
+                  this._config.transparency ??
+                  DEFAULTS.transparantie
               )
             )
-          : this._config[key];
+          )
+        );
+      } else if (key === "aantal_uren") {
+        val = Math.max(
+          1,
+          Math.min(
+            24,
+            Math.round(Number(this._config.aantal_uren ?? DEFAULTS.aantal_uren))
+          )
+        );
+      }
       if (input.value !== String(val)) input.value = val;
     });
 

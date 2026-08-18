@@ -17,6 +17,7 @@ from .const import (
     CONF_DISCHARGE_POWER_ENTITY,
     CONF_DISCHARGE_SOC_ENTITY,
     CONF_NAME,
+    CONF_NORDPOOL_ENTITY,
     CONF_OPERATION_ENTITY,
     DEFAULT_NAME,
     DOMAIN,
@@ -80,6 +81,7 @@ class ZendureScheduleText(TextEntity):
             "discharge_power_entity": data.get(CONF_DISCHARGE_POWER_ENTITY),
             "charge_soc_entity": data.get(CONF_CHARGE_SOC_ENTITY),
             "discharge_soc_entity": data.get(CONF_DISCHARGE_SOC_ENTITY),
+            "nordpool_entity": data.get(CONF_NORDPOOL_ENTITY),
         }
 
     async def async_set_value(self, value: str) -> None:

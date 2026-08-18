@@ -26,6 +26,7 @@ from .const import (
     CONF_MAX_POWER,
     CONF_MIN_POWER,
     CONF_NAME,
+    CONF_NORDPOOL_ENTITY,
     CONF_NOM_L_OPTION,
     CONF_NOM_O_OPTION,
     CONF_NOM_OPTION,
@@ -86,6 +87,7 @@ def _schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
     fields.update(_entity_field(CONF_DISCHARGE_POWER_ENTITY, "number", d))
     fields.update(_optional_entity_field(CONF_CHARGE_SOC_ENTITY, "number", d))
     fields.update(_optional_entity_field(CONF_DISCHARGE_SOC_ENTITY, "number", d))
+    fields.update(_optional_entity_field(CONF_NORDPOOL_ENTITY, "sensor", d))
     fields.update(
         {
             vol.Optional(
