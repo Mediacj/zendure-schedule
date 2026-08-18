@@ -56,13 +56,49 @@ Klik op de knop hierboven om de repository direct in HACS te openen (Home Assist
 1. Installeer via HACS (custom repository) of kopieer `custom_components/zendure_schedule` naar je Home Assistant `custom_components`-map.
 2. Herstart Home Assistant.
 3. Ga naar **Instellingen → Apparaten en diensten → Integratie toevoegen** en zoek **Zendure Schedule**.
-4. Kies zelf je entities (velden starten leeg):
-   - Bedrijfsmodus -> select.zendure_manager_operation (of gelijkwaardig)
-   - AC bedrijfsmodus -> select.*_ac_mode
-   - Laadvermogen (number) -> number.*_input_limit
-   - Ontlaadvermogen (number) -> number.*_output_limit
-   - Maximale SOC -> number.*_soc_set
-   - Minimale SOC -> number.*_min_soc
+4. Kies zelf de juiste entities (velden starten leeg):
+  
+<table>
+  <thead>
+    <tr style="background-color: #0af5ba;">
+      <th>ZENDURE HA INTEGRATIE</th>
+      <th>ENERGIENERDS PLANNER</th>
+      <th>VOORBEELD</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Bedrijfsmodus(Zendure Manager)</td>
+      <td>Bedrijfsmodus</td>
+      <td>select.zendure_manager_operation</td>
+    </tr>
+    <tr>
+      <td>AC bedrijfsmodus(Batterij)</td>
+      <td>AC mode select (input/output)</td>
+      <td>select.[BATTERIJ]_mode00</td>
+    </tr>
+    <tr>
+      <td>Limiet opladen(Batterij)</td>
+      <td>Laadvermogen (input_limit)</td>
+      <td>number.[BATTERIJ]_input_limit</td>
+    </tr>
+    <tr>
+      <td>Limiet ontladen(Batterij)</td>
+      <td>Ontlaadvermogen (output_limit)</td>
+      <td>number.[BATTERIJ]_output_limit</td>
+    </tr>
+    <tr>
+      <td>SOC Maximaal(Batterij)</td>
+      <td>Max SOC bij laden (soc_set)</td>
+      <td>number.[BATTERIJ]_pro_soc_set</td>
+    </tr>
+    <tr>
+      <td>SOC Minimaal(Batterij)</td>
+      <td>Min SOC bij ontladen (min_soc)</td>
+      <td>number.[BATTERIJ]_pro_min_soc</td>
+    </tr>
+  </tbody>
+</table>
 
 Na iedere integratie update: **HA herstarten**, hard refresh.
 
