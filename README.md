@@ -19,6 +19,8 @@
 **Home Assistant** custom integration met 24u-planner voor **Zendure** (NOM / SLM-O / SLM-L / laden / ontladen).
 
 - Eigen Lovelace-card
+- Dynamische tarieven (EPEX) ondersteuning met goedkoopste en duurste uren selectie (optioneel)
+- EPEX grafiek (optioneel)
 - Backend past elk uur toe — geen aparte automation nodig
 - Kleuren en alle dashboard velden via visuele editor te bewerken
 - Per uur min/max SOC instelbaar (optie SOC weergeven)
@@ -29,19 +31,29 @@ Zie ook het artikel op <a href="https://energienerds.nl/index.php/2026/08/15/hom
 - werkt met alle ondersteunde batterijen van de <a href="https://github.com/Zendure/Zendure-HA">Home Assistant Zendure integratie</a> zoals de <a href="https://energienerds.nl/index.php/2026/02/10/zendure-solarflow-2400-ac-review-de-ultieme-ac-stekkerbatterij-voor-salderingsvrij-zelfverbruik" target="_blank" rel="noopener">Zendure SolarFlow 2400 AC+</a>.
 - Geïnstalleerde <a href="https://github.com/Zendure/Zendure-HA">Home Assistant Zendure integratie</a>
 
-**Let op:** De modi Slim opladen/ontladen en Smart gelden altijd voor alle Zendure-batterijen binnen de officiële integratie. Wil je een specifieke batterij buiten de aansturing houden, dan moet je deze op ‘Niet gebruikt’ zetten binnen de Zendure integratie.
+
+**Let op:** EPEX tarieven is een optionele toevoeging die je in de configuratie van het dashboard aan of uit kunt zetten. Als je er gebruik van maakt moet je onderstaande randvoorwaarden ook uitvoeren:
+
+## Randvoorwaarden EPEX tarieven
+- installeer <a href="https://github.com/custom-components/nordpool#installation" target="_blank">deze Nord Pool integratie</a> in HACS
+- geef de entiteit van Nord Pool op tijdens de configuratie van de planner
+
+## Algemeen
+De modi Slim opladen/ontladen en Smart gelden altijd voor alle Zendure-batterijen binnen de officiële integratie. Wil je een specifieke batterij buiten de aansturing houden, dan moet je deze op ‘Niet gebruikt’ zetten binnen de Zendure integratie.
 Het direct aansturen met een specifiek laad- of ontlaadvermogen geldt uitsluitend voor de batterij die je in de Energienerds-configuratie hebt geselecteerd.
 
-## Schermvoorbeeld
+
+
+## Schermvoorbeelden
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Mediacj/zendure-schedule/main/images/card-voorbeeld.jpg" alt="Zendure Schedule card" width="720">
+  <img src="https://github.com/user-attachments/assets/35ded1c6-2660-4915-b470-2d219102dcb9" alt="Zendure Schedule card" width="360">
+  <img src="https://github.com/user-attachments/assets/67ec8eee-eb4e-4071-84b8-e81801ff56c5" alt="Zendure Schedule card" width="360">  
 </p>
-
 
 ## Installeren
 
-#Vergeet niet om eerst de <a href="https://github.com/Zendure/Zendure-HA">Home Assistant Zendure integratie</a> te installeren, als je die nog niet hebt.
+#Vergeet niet om eerst de <a href="https://github.com/Zendure/Zendure-HA">Home Assistant Zendure integratie</a> te installeren, als je die nog niet hebt. En  <a href="https://github.com/custom-components/nordpool#installation" target="_blank">deze Nord Pool integratie</a> als je met dynamische tarieven wilt werken.
 
 ### Snelste manier (HACS)
 
