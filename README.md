@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/Mediacj/zendure-schedule"><img src="https://img.shields.io/github/last-commit/Mediacj/zendure-schedule?style=flat-square" alt="last commit"></a>
-  <a href="https://github.com/hacs/integration"><img src="https://img.shields.io/badge/HACS-Custom-orange.svg?style=flat-square" alt="HACS"></a>
+  <a href="https://github.com/Mediacj/zendure-schedule"><img src="https://img.shields.io/badge/HACS-Custom-orange.svg?style=flat-square" alt="HACS"></a>
 </p>
 
 ---
