@@ -3,7 +3,7 @@
  * Resource / extra_module_url: /local/zendure-schedule/zendure-schedule.js
  */
 
-const CARD_VERSION = "1.0.52";
+const CARD_VERSION = "1.0.53";
 const LOGO_URL = `/local/zendure-schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
@@ -20,7 +20,7 @@ if (IS_FIRST_MODULE_LOAD) {
   );
 }
 
-/** Entity-keys horen in de integratie-config, niet in card-YAML. */
+/** Keys horen in de integratie-config, niet in card-YAML. */
 const ENTITY_CONFIG_KEYS = [
   "entity",
   "direction_entity",
@@ -34,9 +34,23 @@ const ENTITY_CONFIG_KEYS = [
   "planner_entity",
 ];
 
+/** Select-opties horen in de integratieconfig, niet in card-YAML. */
+const OPTION_CONFIG_KEYS = [
+  "nom_option",
+  "nom_o_option",
+  "nom_l_option",
+  "charge_mode_option",
+  "discharge_mode_option",
+  "charge_option",
+  "discharge_option",
+  "off_option",
+];
+
+const INTEGRATION_CONFIG_KEYS = [...ENTITY_CONFIG_KEYS, ...OPTION_CONFIG_KEYS];
+
 function stripEntityConfig(config) {
   const out = { ...(config || {}) };
-  ENTITY_CONFIG_KEYS.forEach((key) => {
+  INTEGRATION_CONFIG_KEYS.forEach((key) => {
     delete out[key];
   });
   return out;
@@ -201,6 +215,12 @@ class ZendureScheduleCard extends HTMLElement {
       ENTITY_CONFIG_KEYS.forEach((key) => {
         this._config[key] = "";
       });
+      // Select-opties: defaults tot hydrate ze uit de integratie overschrijft.
+      OPTION_CONFIG_KEYS.forEach((key) => {
+        if (!(key in (clean || {}))) {
+          this._config[key] = DEFAULTS[key];
+        }
+      });
       this._userConfig = stripEntityConfig(clean);
       this._config.transparantie = this._transparantie();
       delete this._config.transparency;
@@ -349,6 +369,11 @@ class ZendureScheduleCard extends HTMLElement {
       const attrKey = key === "entity" ? "operation_entity" : key;
       if (attrs[attrKey]) {
         patch[key] = attrs[attrKey];
+      }
+    });
+    OPTION_CONFIG_KEYS.forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(attrs, key) && attrs[key] != null) {
+        patch[key] = attrs[key];
       }
     });
     if (Object.keys(patch).length) {
@@ -572,6 +597,32 @@ class ZendureScheduleCard extends HTMLElement {
     };
   }
 
+  /** Prijspositie 0 (goedkoopst) → 1 (duurst) naar groen→rood (gedempt). */
+  _nordpoolGradientColor(price, min, max) {
+    const t = Math.max(0, Math.min(1, (Number(price) - min) / Math.max(0.001, max - min)));
+    // groen #1bdf62 → amber #f0c430 → rood #ff3b4a
+    const stops = [
+      { t: 0, r: 27, g: 223, b: 98 },
+      { t: 0.5, r: 240, g: 196, b: 48 },
+      { t: 1, r: 255, g: 59, b: 74 },
+    ];
+    let a = stops[0];
+    let b = stops[stops.length - 1];
+    for (let i = 0; i < stops.length - 1; i++) {
+      if (t >= stops[i].t && t <= stops[i + 1].t) {
+        a = stops[i];
+        b = stops[i + 1];
+        break;
+      }
+    }
+    const u = (t - a.t) / Math.max(0.001, b.t - a.t);
+    const r = Math.round(a.r + (b.r - a.r) * u);
+    const g = Math.round(a.g + (b.g - a.g) * u);
+    const bl = Math.round(a.b + (b.b - a.b) * u);
+    // Gedempt zodat selectie (is-cheap/is-expensive) duidelijk blijft.
+    return `rgba(${r},${g},${bl},0.42)`;
+  }
+
   _hideNordpoolTip() {
     this._els?.nordpoolTip?.classList.add("hidden");
   }
@@ -646,9 +697,14 @@ class ZendureScheduleCard extends HTMLElement {
       } else {
         const pct = 12 + ((price - min) / span) * 88;
         col.style.setProperty("--h", `${pct}%`);
+        col.style.setProperty(
+          "--np-tone",
+          this._nordpoolGradientColor(price, min, max)
+        );
         if (cheap.has(h) && expensive.has(h)) col.classList.add("is-both");
         else if (cheap.has(h)) col.classList.add("is-cheap");
         else if (expensive.has(h)) col.classList.add("is-expensive");
+        else col.classList.add("is-tone");
         col.title = `${String(h).padStart(2, "0")}:00 · ${this._formatNordpoolPrice(price)}`;
         col.addEventListener("pointerenter", () => {
           this._showNordpoolTip(col, price, h);
@@ -2466,6 +2522,10 @@ class ZendureScheduleCard extends HTMLElement {
         box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
         transition: filter 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
       }
+      .np-col.is-tone .np-bar {
+        background: var(--np-tone, rgba(159,196,214,0.45));
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+      }
       .np-col.is-cheap .np-bar {
         background: #1bdf62;
         box-shadow: 0 0 10px rgba(27,223,98,0.55);
@@ -2574,7 +2634,7 @@ defineElement(TAG, ZendureScheduleCard);
 
 class ZendureScheduleEditor extends HTMLElement {
   setConfig(config) {
-    const hadEntityKeys = ENTITY_CONFIG_KEYS.some(
+    const hadEntityKeys = INTEGRATION_CONFIG_KEYS.some(
       (key) => config && Object.prototype.hasOwnProperty.call(config, key)
     );
     this._raw = stripEntityConfig(config);
@@ -2697,23 +2757,15 @@ class ZendureScheduleEditor extends HTMLElement {
             Voor Goedkoopste / Duurste en de groene/rode markering in de grafiek. Ook via slider onder de grafiek.
           </div>
           <div class="hint">
-            Entities (operation, vermogen, SOC, schema) komen uit de
+            Entities en select-opties komen uit de
             Zendure Schedule-integratieconfiguratie — niet uit de card-YAML.
           </div>
 
-          <div class="section-title">Select-opties</div>
-          <div class="row"><label>NOM (nom_option)</label><input type="text" data-key="nom_option" placeholder="smart"></div>
-          <div class="row"><label>SLM-O (nom_o_option)</label><input type="text" data-key="nom_o_option" placeholder="smart_discharging"></div>
+          <div class="section-title">Knopteksten</div>
           <div class="row"><label>Tekst SLM-O (nom_o_label)</label><input type="text" data-key="nom_o_label" placeholder="Slim ontladen"></div>
           <div class="row"><label>Tekst SLM-O-uurtegel (nom_o_tag, max 5)</label><input type="text" data-key="nom_o_tag" maxlength="5" placeholder="SLM-O"></div>
-          <div class="row"><label>SLM-L (nom_l_option)</label><input type="text" data-key="nom_l_option" placeholder="smart_charging"></div>
           <div class="row"><label>Tekst SLM-L (nom_l_label)</label><input type="text" data-key="nom_l_label" placeholder="Slim laden"></div>
           <div class="row"><label>Tekst SLM-L-uurtegel (nom_l_tag, max 5)</label><input type="text" data-key="nom_l_tag" maxlength="5" placeholder="SLM-L"></div>
-          <div class="row"><label>Laden operation (charge_mode_option)</label><input type="text" data-key="charge_mode_option" placeholder="off"></div>
-          <div class="row"><label>Ontladen operation (discharge_mode_option)</label><input type="text" data-key="discharge_mode_option" placeholder="off"></div>
-          <div class="row"><label>Laden ac_mode (charge_option)</label><input type="text" data-key="charge_option" placeholder="input"></div>
-          <div class="row"><label>Ontladen ac_mode (discharge_option)</label><input type="text" data-key="discharge_option" placeholder="output"></div>
-          <div class="row"><label>Uit-penseel option (off_option)</label><input type="text" data-key="off_option" placeholder="off"></div>
 
           <div class="section-title">Vermogen</div>
           <div class="row"><label>Standaard vermogen (default_power)</label><input type="number" data-key="default_power" min="0" step="50"></div>
@@ -2775,24 +2827,16 @@ class ZendureScheduleEditor extends HTMLElement {
           </div>
 
           <div class="hint">
-            Opties en kleuren overschrijven de standaardwaarden in de card.
-            Entities wijzig je in Instellingen → Apparaten &amp; diensten → Zendure Schedule.
+            Knopteksten en kleuren overschrijven de standaardwaarden in de card.
+            Entities en select-opties wijzig je in Instellingen → Apparaten &amp; diensten → Zendure Schedule.
           </div>
         </div>
       `;
 
       const textKeys = [
         "title",
-        "nom_option",
-        "nom_o_option",
         "nom_o_label",
-        "nom_l_option",
         "nom_l_label",
-        "charge_mode_option",
-        "discharge_mode_option",
-        "charge_option",
-        "discharge_option",
-        "off_option",
       ];
       textKeys.forEach((key) => {
         const input = this.querySelector(`input[data-key="${key}"]`);
@@ -2913,18 +2957,10 @@ class ZendureScheduleEditor extends HTMLElement {
 
     const syncText = [
       "title",
-      "nom_option",
-      "nom_o_option",
       "nom_o_label",
       "nom_o_tag",
-      "nom_l_option",
       "nom_l_label",
       "nom_l_tag",
-      "charge_mode_option",
-      "discharge_mode_option",
-      "charge_option",
-      "discharge_option",
-      "off_option",
     ];
     syncText.forEach((key) => {
       const input = this.querySelector(`input[data-key="${key}"]`);

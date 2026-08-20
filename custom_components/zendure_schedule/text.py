@@ -11,15 +11,24 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
+    CONF_CHARGE_MODE_OPTION,
+    CONF_CHARGE_OPTION,
     CONF_CHARGE_POWER_ENTITY,
     CONF_CHARGE_SOC_ENTITY,
     CONF_DIRECTION_ENTITY,
+    CONF_DISCHARGE_MODE_OPTION,
+    CONF_DISCHARGE_OPTION,
     CONF_DISCHARGE_POWER_ENTITY,
     CONF_DISCHARGE_SOC_ENTITY,
     CONF_NAME,
+    CONF_NOM_L_OPTION,
+    CONF_NOM_O_OPTION,
+    CONF_NOM_OPTION,
     CONF_NORDPOOL_ENTITY,
+    CONF_OFF_OPTION,
     CONF_OPERATION_ENTITY,
     DEFAULT_NAME,
+    DEFAULT_OFF_OPTION,
     DOMAIN,
     MANUFACTURER,
     MODEL,
@@ -82,6 +91,14 @@ class ZendureScheduleText(TextEntity):
             "charge_soc_entity": data.get(CONF_CHARGE_SOC_ENTITY),
             "discharge_soc_entity": data.get(CONF_DISCHARGE_SOC_ENTITY),
             "nordpool_entity": data.get(CONF_NORDPOOL_ENTITY),
+            "nom_option": data.get(CONF_NOM_OPTION),
+            "nom_o_option": data.get(CONF_NOM_O_OPTION),
+            "nom_l_option": data.get(CONF_NOM_L_OPTION),
+            "charge_mode_option": data.get(CONF_CHARGE_MODE_OPTION),
+            "discharge_mode_option": data.get(CONF_DISCHARGE_MODE_OPTION),
+            "charge_option": data.get(CONF_CHARGE_OPTION),
+            "discharge_option": data.get(CONF_DISCHARGE_OPTION),
+            "off_option": data.get(CONF_OFF_OPTION, DEFAULT_OFF_OPTION),
         }
 
     async def async_set_value(self, value: str) -> None:
