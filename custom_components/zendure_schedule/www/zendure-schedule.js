@@ -3,7 +3,7 @@
  * Resource / extra_module_url: /local/zendure-schedule/zendure-schedule.js
  */
 
-const CARD_VERSION = "1.0.53";
+const CARD_VERSION = "1.0.54";
 const LOGO_URL = `/local/zendure-schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
@@ -1213,7 +1213,9 @@ class ZendureScheduleCard extends HTMLElement {
             </div>
           </div>
 
-          <div class="brush-row" role="toolbar" aria-label="Modus toekennen">
+          <div class="hours" role="grid" aria-label="24 uur schema"></div>
+
+          <div class="brush-row hidden" role="toolbar" aria-label="Modus toekennen">
             <button type="button" class="brush is-muted" data-brush="off" disabled>Uit</button>
             <button type="button" class="brush is-muted" data-brush="nom" disabled>NOM</button>
             <button type="button" class="brush is-muted" data-brush="nom_o" disabled>SLM-O</button>
@@ -1221,8 +1223,6 @@ class ZendureScheduleCard extends HTMLElement {
             <button type="button" class="brush is-muted" data-brush="charge" disabled>Laden</button>
             <button type="button" class="brush is-muted" data-brush="discharge" disabled>Ontladen</button>
           </div>
-
-          <div class="hours" role="grid" aria-label="24 uur schema"></div>
 
           <div class="editor-panel hidden">
             <div class="editor-head">
@@ -1728,6 +1728,7 @@ class ZendureScheduleCard extends HTMLElement {
     this._hourButtons?.forEach((_, h) => this._updateHourButton(h));
 
     const armed = this._hasSelection();
+    this._els.brushRow?.classList.toggle("hidden", !armed);
     this._els.brushRow?.classList.toggle("has-selection", armed);
     this._els.brushes.forEach((btn) => {
       btn.disabled = !armed;
@@ -2285,8 +2286,9 @@ class ZendureScheduleCard extends HTMLElement {
       }
       .brush-row {
         display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
-        gap: 5px; margin-bottom: 12px;
+        gap: 5px; margin-top: 12px; margin-bottom: 10px;
       }
+      .brush-row.hidden { display: none; }
       .brush {
         appearance: none; border: 1px solid rgba(255,255,255,0.28);
         background: rgba(255,255,255,0.08); color: #d8e6ee;
