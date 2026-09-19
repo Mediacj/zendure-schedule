@@ -47,8 +47,8 @@ Het direct aansturen met een specifiek laad- of ontlaadvermogen geldt uitsluiten
 ## Schermvoorbeelden
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/35ded1c6-2660-4915-b470-2d219102dcb9" alt="Zendure Schedule card" width="360">
-  <img src="https://github.com/user-attachments/assets/67ec8eee-eb4e-4071-84b8-e81801ff56c5" alt="Zendure Schedule card" width="360">  
+  <img width="340" alt="schermvoorbeeld" src="https://github.com/user-attachments/assets/1eac3ca7-ff46-43e0-87de-d400611ee523" />
+  <img width="340" alt="schermvoorbeeld met selectie" src="https://github.com/user-attachments/assets/5b90528a-05e7-41b6-a445-7db6faaca27e" />
 </p>
 
 ## Installeren
