@@ -1,0 +1,24 @@
+name: Release Asset Automation
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  upload-hacs-zip:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create Zip Archive
+        run: |
+          cd custom_components/zendure_schedule
+          zip -r ../../zendure_schedule.zip .
+
+      - name: Upload Zip to Release Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: zendure_schedule.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
