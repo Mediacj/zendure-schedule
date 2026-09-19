@@ -183,10 +183,10 @@ const DEFAULTS = {
   epex_kleurrijk: true,
   // Aantal uren om te selecteren via Goedkoopste/Duurste
   aantal_uren: 4,
-  // EPEX-uurprijzen standaard inclusief BTW/kosten; uit = trek btw_en_kosten af
-  incl_btw: true,
-  // Vaste BTW + kosten (€/kWh) die bij excl. BTW van de uurprijs af gaan
-  btw_en_kosten: 0.1108481,
+  // EPEX-uurprijzen standaard inclusief energiebelasting; uit = trek eb_en_kosten af
+  incl_eb: true,
+  // Energiebelasting + eventuele extra kosten (€/kWh) bij excl. EB
+  eb_en_kosten: 0.1108481,
   colors: {
     nom: "#1b8a3a",
     nom_o: "#00e5c0",
@@ -233,8 +233,17 @@ class ZendureScheduleCard extends HTMLElement {
       this._config.dynamische_energieprijzen = this._dynamischeEnergieprijzen();
       this._config.epex_kleurrijk = this._epexKleurrijk();
       this._config.aantal_uren = this._aantalUren();
-      this._config.incl_btw = this._inclBtw();
-      this._config.btw_en_kosten = this._btwEnKosten();
+      // Migratie oude YAML-keys
+      if (clean && clean.incl_eb === undefined && clean.incl_btw !== undefined) {
+        this._config.incl_eb = clean.incl_btw;
+      }
+      if (clean && clean.eb_en_kosten === undefined && clean.btw_en_kosten !== undefined) {
+        this._config.eb_en_kosten = clean.btw_en_kosten;
+      }
+      this._config.incl_eb = this._inclEb();
+      this._config.eb_en_kosten = this._ebEnKosten();
+      delete this._config.incl_btw;
+      delete this._config.btw_en_kosten;
       this._selectedHours =
         this._selectedHours instanceof Set ? this._selectedHours : new Set();
       this._activeMode = this._activeMode ?? null;
@@ -491,50 +500,58 @@ class ZendureScheduleCard extends HTMLElement {
     const n = this._aantalUren();
     const slider = this._els?.nordpoolHoursSlider;
     const valueEl = this._els?.nordpoolHoursValue;
-    const incl = this._els?.nordpoolInclBtw;
+    const incl = this._els?.nordpoolInclEb;
     if (slider && this.shadowRoot?.activeElement !== slider) {
       slider.value = String(n);
     }
     if (valueEl) valueEl.textContent = String(n);
     if (incl && this.shadowRoot?.activeElement !== incl) {
-      incl.checked = this._inclBtw();
+      incl.checked = this._inclEb();
     }
   }
 
-  /** EPEX-uurprijzen inclusief BTW/kosten tonen (default aan). */
-  _inclBtw() {
-    if (this._config?.incl_btw === false) return false;
-    if (this._config?.incl_btw === true) return true;
-    return DEFAULTS.incl_btw;
+  /** EPEX-uurprijzen inclusief energiebelasting tonen (default aan). */
+  _inclEb() {
+    const raw =
+      this._config?.incl_eb !== undefined
+        ? this._config.incl_eb
+        : this._config?.incl_btw;
+    if (raw === false) return false;
+    if (raw === true) return true;
+    return DEFAULTS.incl_eb;
   }
 
-  /** Vaste BTW + kosten in €/kWh (default 0.1108481). */
-  _btwEnKosten() {
-    const raw = this._config?.btw_en_kosten ?? DEFAULTS.btw_en_kosten;
+  /** Energiebelasting + eventuele extra kosten in €/kWh (default 0.1108481). */
+  _ebEnKosten() {
+    const raw =
+      this._config?.eb_en_kosten ??
+      this._config?.btw_en_kosten ??
+      DEFAULTS.eb_en_kosten;
     const n = Number(raw);
-    if (!Number.isFinite(n) || n < 0) return DEFAULTS.btw_en_kosten;
+    if (!Number.isFinite(n) || n < 0) return DEFAULTS.eb_en_kosten;
     return n;
   }
 
-  /** Bedrag dat van de sensorprijs af gaat (0 als incl. BTW). */
-  _nordpoolBtwAdjustment() {
-    if (this._inclBtw()) return 0;
-    let fee = this._btwEnKosten();
+  /** Bedrag dat van de sensorprijs af gaat (0 als incl. EB). */
+  _nordpoolEbAdjustment() {
+    if (this._inclEb()) return 0;
+    let fee = this._ebEnKosten();
     const entityId = this._nordpoolEntityId();
     const attrs = this._hass?.states?.[entityId]?.attributes || {};
     if (attrs.price_in_cents) fee *= 100;
     return fee;
   }
 
-  _setInclBtwFromUi(checked, { persist = false } = {}) {
+  _setInclEbFromUi(checked, { persist = false } = {}) {
     const value = !!checked;
-    this._config.incl_btw = value;
+    this._config.incl_eb = value;
     this._userConfig = stripEntityConfig({
       ...(this._userConfig || {}),
-      incl_btw: value,
+      incl_eb: value,
     });
-    if (this._els?.nordpoolInclBtw) {
-      this._els.nordpoolInclBtw.checked = value;
+    delete this._userConfig.incl_btw;
+    if (this._els?.nordpoolInclEb) {
+      this._els.nordpoolInclEb.checked = value;
     }
     // Forceer altijd een volledige grafiek-rebuild (absolute schaal wijzigt).
     this._lastNordpoolChartSig = "";
@@ -557,7 +574,7 @@ class ZendureScheduleCard extends HTMLElement {
   /**
    * Gemiddelde prijs per uur (0–23) uit Nord Pool today/raw_today.
    * Ondersteunt 15-min (96) en uurlijkse (24) series.
-   * Bij incl_btw=false wordt btw_en_kosten van elke uurprijs afgetrokken.
+   * Bij incl_eb=false wordt eb_en_kosten van elke uurprijs afgetrokken.
    */
   _nordpoolHourlyPrices() {
     const entityId = this._nordpoolEntityId();
@@ -617,7 +634,7 @@ class ZendureScheduleCard extends HTMLElement {
 
     if (!rows?.length) return null;
 
-    const fee = this._nordpoolBtwAdjustment();
+    const fee = this._nordpoolEbAdjustment();
     if (!fee) return rows;
     return rows.map((row) => ({
       ...row,
@@ -744,7 +761,7 @@ class ZendureScheduleCard extends HTMLElement {
 
     const byHour = new Map(prices.map((row) => [row.hour, row.price]));
     const vals = prices.map((row) => row.price);
-    // Absolute schaal t.o.v. 0, zodat aftrekken van btw_en_kosten de kolommen
+    // Absolute schaal t.o.v. 0, zodat aftrekken van eb_en_kosten de kolommen
     // zichtbaar wijzigt (relatieve min→max blijft bij een vaste aftrek gelijk).
     const dataMin = Math.min(...vals);
     const dataMax = Math.max(...vals);
@@ -753,9 +770,9 @@ class ZendureScheduleCard extends HTMLElement {
     const span = Math.max(0.001, max - min);
     const { cheap, expensive } = this._nordpoolRankSets(prices);
     const kleurrijk = this._epexKleurrijk();
-    const inclBtw = this._inclBtw();
+    const inclEb = this._inclEb();
     const nowHour = new Date().getHours();
-    const sig = `${this._nordpoolEntityId()}|${this._aantalUren()}|${kleurrijk}|${inclBtw}|${this._btwEnKosten()}|${nowHour}|${prices
+    const sig = `${this._nordpoolEntityId()}|${this._aantalUren()}|${kleurrijk}|${inclEb}|${this._ebEnKosten()}|${nowHour}|${prices
       .map((row) => `${row.hour}:${row.price}`)
       .join(",")}`;
     if (
@@ -771,9 +788,9 @@ class ZendureScheduleCard extends HTMLElement {
 
     if (this._els.nordpoolUnit) {
       const unit = this._nordpoolPriceUnit();
-      this._els.nordpoolUnit.textContent = inclBtw
+      this._els.nordpoolUnit.textContent = inclEb
         ? unit
-        : `${unit} · excl. btw`;
+        : `${unit} · excl. EB`;
     }
 
     bars.innerHTML = "";
@@ -1365,9 +1382,9 @@ class ZendureScheduleCard extends HTMLElement {
               <label class="nordpool-hours-label" for="zs-np-hours">Aantal uren</label>
               <input id="zs-np-hours" class="nordpool-hours-slider" type="range" min="1" max="24" step="1" value="4">
               <span class="nordpool-hours-value">4</span>
-              <label class="nordpool-incl-btw" title="Uit: trek btw_en_kosten van de uurprijzen af">
-                <input class="nordpool-incl-btw-check" type="checkbox" checked>
-                <span>incl. btw</span>
+              <label class="nordpool-incl-eb" title="Incl. energiebelasting. Uit: trek eb_en_kosten van de uurprijzen af">
+                <input class="nordpool-incl-eb-check" type="checkbox" checked>
+                <span>incl. EB</span>
               </label>
             </div>
           </div>
@@ -1419,7 +1436,7 @@ class ZendureScheduleCard extends HTMLElement {
       nordpoolTip: card.querySelector(".nordpool-chart-tip"),
       nordpoolHoursSlider: card.querySelector(".nordpool-hours-slider"),
       nordpoolHoursValue: card.querySelector(".nordpool-hours-value"),
-      nordpoolInclBtw: card.querySelector(".nordpool-incl-btw-check"),
+      nordpoolInclEb: card.querySelector(".nordpool-incl-eb-check"),
       pickCheapBtn: card.querySelector('[data-action="pick-cheap"]'),
       pickExpensiveBtn: card.querySelector('[data-action="pick-expensive"]'),
     };
@@ -1432,8 +1449,8 @@ class ZendureScheduleCard extends HTMLElement {
         persist: true,
       });
     });
-    this._els.nordpoolInclBtw?.addEventListener("change", () => {
-      this._setInclBtwFromUi(this._els.nordpoolInclBtw.checked, {
+    this._els.nordpoolInclEb?.addEventListener("change", () => {
+      this._setInclEbFromUi(this._els.nordpoolInclEb.checked, {
         persist: true,
       });
     });
@@ -2695,7 +2712,7 @@ class ZendureScheduleCard extends HTMLElement {
         font-weight: 700;
         color: #eaf6ff;
       }
-      .nordpool-incl-btw {
+      .nordpool-incl-eb {
         display: inline-flex;
         align-items: center;
         gap: 5px;
@@ -2707,7 +2724,7 @@ class ZendureScheduleCard extends HTMLElement {
         cursor: pointer;
         user-select: none;
       }
-      .nordpool-incl-btw-check {
+      .nordpool-incl-eb-check {
         width: 14px;
         height: 14px;
         margin: 0;
@@ -2888,18 +2905,19 @@ class ZendureScheduleEditor extends HTMLElement {
             Voor Goedkoopste / Duurste en de groene/rode markering in de grafiek. Ook via slider onder de grafiek.
           </div>
           <label class="check-row">
-            <input type="checkbox" data-key="incl_btw">
-            Incl. BTW (incl_btw)
+            <input type="checkbox" data-key="incl_eb">
+            Incl. EB / energiebelasting (incl_eb)
           </label>
           <div class="hint">
-            Aan: EPEX-uurprijzen zoals geleverd (incl. BTW/kosten). Uit: trek btw_en_kosten af. Ook via vinkje onder de grafiek.
+            Aan: EPEX-uurprijzen inclusief energiebelasting. Uit: trek eb_en_kosten af. Ook via vinkje “incl. EB” onder de grafiek.
           </div>
           <div class="row">
-            <label>BTW en kosten €/kWh (btw_en_kosten)</label>
-            <input type="number" data-key="btw_en_kosten" min="0" step="0.0000001" placeholder="0.1108481">
+            <label>EB en kosten €/kWh (eb_en_kosten)</label>
+            <input type="number" data-key="eb_en_kosten" min="0" step="0.0000001" placeholder="0.1108481">
           </div>
           <div class="hint">
-            Vast bedrag dat bij uitgevinkt “incl. btw” van elke uurprijs wordt afgetrokken. Standaard 0.1108481.
+            Energiebelasting per kWh die bij uitgevinkt “incl. EB” van elke uurprijs wordt afgetrokken.
+            Behalve energiebelasting kun je hier ook extra kosten per kWh opvoeren. Standaard 0.1108481.
           </div>
           <div class="hint">
             Entities en select-opties komen uit de
@@ -3018,7 +3036,7 @@ class ZendureScheduleEditor extends HTMLElement {
         default_discharge_soc: 10,
         transparantie: 15,
         aantal_uren: 4,
-        btw_en_kosten: 0.1108481,
+        eb_en_kosten: 0.1108481,
       };
       Object.keys(numberKeys).forEach((key) => {
         const input = this.querySelector(`input[data-key="${key}"]`);
@@ -3056,7 +3074,7 @@ class ZendureScheduleEditor extends HTMLElement {
         });
       });
 
-      ["enabled", "auto_apply", "show_soc", "dynamische_energieprijzen", "epex_kleurrijk", "incl_btw"].forEach((key) => {
+      ["enabled", "auto_apply", "show_soc", "dynamische_energieprijzen", "epex_kleurrijk", "incl_eb"].forEach((key) => {
         const input = this.querySelector(`input[data-key="${key}"]`);
         if (!input) return;
         input.addEventListener("change", () => {
@@ -3116,7 +3134,7 @@ class ZendureScheduleEditor extends HTMLElement {
       if (input.value !== String(val)) input.value = val;
     });
 
-    ["default_power", "max_power", "min_power", "power_step", "default_charge_soc", "default_discharge_soc", "transparantie", "aantal_uren", "btw_en_kosten"].forEach((key) => {
+    ["default_power", "max_power", "min_power", "power_step", "default_charge_soc", "default_discharge_soc", "transparantie", "aantal_uren", "eb_en_kosten"].forEach((key) => {
       const input = this.querySelector(`input[data-key="${key}"]`);
       if (!input || this._isFocused(input)) return;
       let val = this._config[key];
@@ -3142,14 +3160,18 @@ class ZendureScheduleEditor extends HTMLElement {
             Math.round(Number(this._config.aantal_uren ?? DEFAULTS.aantal_uren))
           )
         );
-      } else if (key === "btw_en_kosten") {
-        const n = Number(this._config.btw_en_kosten ?? DEFAULTS.btw_en_kosten);
-        val = Number.isFinite(n) && n >= 0 ? n : DEFAULTS.btw_en_kosten;
+      } else if (key === "eb_en_kosten") {
+        const n = Number(
+          this._config.eb_en_kosten ??
+            this._config.btw_en_kosten ??
+            DEFAULTS.eb_en_kosten
+        );
+        val = Number.isFinite(n) && n >= 0 ? n : DEFAULTS.eb_en_kosten;
       }
       if (input.value !== String(val)) input.value = val;
     });
 
-    ["enabled", "auto_apply", "show_soc", "dynamische_energieprijzen", "epex_kleurrijk", "incl_btw"].forEach((key) => {
+    ["enabled", "auto_apply", "show_soc", "dynamische_energieprijzen", "epex_kleurrijk", "incl_eb"].forEach((key) => {
       const input = this.querySelector(`input[data-key="${key}"]`);
       if (!input) return;
       const checked =
@@ -3161,8 +3183,8 @@ class ZendureScheduleEditor extends HTMLElement {
               ? this._config.dynamische_energieprijzen !== false
               : key === "epex_kleurrijk"
                 ? this._config.epex_kleurrijk !== false
-                : key === "incl_btw"
-                  ? this._config.incl_btw !== false
+                : key === "incl_eb"
+                  ? this._config.incl_eb !== false
                   : !!this._config.enabled;
       if (input.checked !== checked) input.checked = checked;
     });
@@ -3194,6 +3216,11 @@ class ZendureScheduleEditor extends HTMLElement {
     ENTITY_CONFIG_KEYS.forEach((key) => {
       delete raw[key];
     });
+    // Oude BTW-keys opruimen na hernoeming naar EB
+    if ("incl_eb" in raw || "eb_en_kosten" in raw) {
+      delete raw.incl_btw;
+      delete raw.btw_en_kosten;
+    }
     if (raw.nom_o_tag != null) {
       raw.nom_o_tag = String(raw.nom_o_tag).slice(0, 5);
     }
