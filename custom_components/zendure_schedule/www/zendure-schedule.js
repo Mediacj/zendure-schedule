@@ -536,8 +536,9 @@ class ZendureScheduleCard extends HTMLElement {
     if (this._els?.nordpoolInclBtw) {
       this._els.nordpoolInclBtw.checked = value;
     }
+    // Forceer altijd een volledige grafiek-rebuild (absolute schaal wijzigt).
     this._lastNordpoolChartSig = "";
-    this._renderNordpoolChart();
+    this._renderNordpoolChart({ force: true });
     if (persist) {
       this.dispatchEvent(
         new CustomEvent("config-changed", {
@@ -718,7 +719,8 @@ class ZendureScheduleCard extends HTMLElement {
     tip.style.top = `${Math.max(4, colBox.top - chartBox.top - 28)}px`;
   }
 
-  _renderNordpoolChart() {
+  _renderNordpoolChart(opts = {}) {
+    const force = !!opts.force;
     const wrap = this._els?.nordpoolChart;
     const bars = this._els?.nordpoolBars;
     if (!wrap || !bars) return;
@@ -742,26 +744,36 @@ class ZendureScheduleCard extends HTMLElement {
 
     const byHour = new Map(prices.map((row) => [row.hour, row.price]));
     const vals = prices.map((row) => row.price);
-    const min = Math.min(...vals);
-    const max = Math.max(...vals);
+    // Absolute schaal t.o.v. 0, zodat aftrekken van btw_en_kosten de kolommen
+    // zichtbaar wijzigt (relatieve min→max blijft bij een vaste aftrek gelijk).
+    const dataMin = Math.min(...vals);
+    const dataMax = Math.max(...vals);
+    const min = Math.min(0, dataMin);
+    const max = Math.max(dataMax, min + 0.001);
     const span = Math.max(0.001, max - min);
     const { cheap, expensive } = this._nordpoolRankSets(prices);
     const kleurrijk = this._epexKleurrijk();
+    const inclBtw = this._inclBtw();
     const nowHour = new Date().getHours();
-    const sig = `${this._nordpoolEntityId()}|${this._aantalUren()}|${kleurrijk}|${this._inclBtw()}|${this._btwEnKosten()}|${nowHour}|${prices
+    const sig = `${this._nordpoolEntityId()}|${this._aantalUren()}|${kleurrijk}|${inclBtw}|${this._btwEnKosten()}|${nowHour}|${prices
       .map((row) => `${row.hour}:${row.price}`)
       .join(",")}`;
     if (
+      !force &&
       sig === this._lastNordpoolChartSig &&
       bars.childElementCount === 24 &&
       !wrap.classList.contains("hidden")
     ) {
+      this._syncNordpoolHoursUi();
       return;
     }
     this._lastNordpoolChartSig = sig;
 
     if (this._els.nordpoolUnit) {
-      this._els.nordpoolUnit.textContent = this._nordpoolPriceUnit();
+      const unit = this._nordpoolPriceUnit();
+      this._els.nordpoolUnit.textContent = inclBtw
+        ? unit
+        : `${unit} · excl. btw`;
     }
 
     bars.innerHTML = "";
@@ -772,15 +784,15 @@ class ZendureScheduleCard extends HTMLElement {
       if (!Number.isFinite(price)) {
         col.classList.add("is-empty");
       } else {
-        const pct = 12 + ((price - min) / span) * 88;
-        col.style.setProperty("--h", `${pct}%`);
+        const pct = 8 + ((price - min) / span) * 92;
+        col.style.setProperty("--h", `${Math.max(4, pct)}%`);
         if (cheap.has(h) && expensive.has(h)) col.classList.add("is-both");
         else if (cheap.has(h)) col.classList.add("is-cheap");
         else if (expensive.has(h)) col.classList.add("is-expensive");
         else if (kleurrijk) {
           col.style.setProperty(
             "--np-tone",
-            this._nordpoolGradientColor(price, min, max)
+            this._nordpoolGradientColor(price, dataMin, dataMax)
           );
           col.classList.add("is-tone");
         }
@@ -2611,7 +2623,7 @@ class ZendureScheduleCard extends HTMLElement {
         border-radius: 3px 3px 1px 1px;
         background: rgba(159,196,214,0.45);
         box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
-        transition: filter 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+        transition: height 0.2s ease, filter 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
       }
       .np-col.is-tone .np-bar {
         background: var(--np-tone, rgba(159,196,214,0.45));
