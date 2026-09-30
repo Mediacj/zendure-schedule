@@ -116,7 +116,12 @@ Na iedere integratie update: **HA herstarten**, hard refresh.
 
 ## Dashboard card
 
-Je kunt de planner eenvoudig toevoegen door je dashboard te bewerken en te zoeken naar de 'schedule' kaart.
+Je kunt de planner eenvoudig toevoegen door je dashboard te bewerken en te zoeken naar de 'schedule' kaart:
+
+<img width="1028" height="755" alt="image" src="https://github.com/user-attachments/assets/5e9ebd54-b180-4340-9158-9c5959e4cdea" />
+
+
+Of als je flexibel wilt zijn kun je ook met yaml werken, minimaal is onderstaande yaml genoeg:
 
 Entities staan **alleen** in de integratieconfiguratie (installeren / opties). De card leest ze automatisch via de schema-text-entity.
 
