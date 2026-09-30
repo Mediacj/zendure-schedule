@@ -120,6 +120,7 @@ Je kunt de planner eenvoudig toevoegen door je dashboard te bewerken en te zoeke
 
 <img width="1028" height="755" alt="image" src="https://github.com/user-attachments/assets/5e9ebd54-b180-4340-9158-9c5959e4cdea" />
 
+Als je daarna het dashboard bewerkt en op het pennetje van de net geplaatste kaart klikt kun je alle variabelen van de kaart aan en uitzetten etc.
 
 Of als je flexibel wilt zijn kun je ook met yaml werken, minimaal is onderstaande yaml genoeg:
 
