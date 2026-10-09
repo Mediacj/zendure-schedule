@@ -24,6 +24,7 @@
 - Backend past elk uur toe — geen aparte automation nodig
 - Kleuren en alle dashboard velden via visuele editor te bewerken
 - Per uur min/max SOC instelbaar (optie SOC weergeven)
+- Je kunt voor de Zendure HA integratie iedere slimme-meter bron gebruiken, dus ook Homewizard of een Shelly en daarmee ook voor onze planner.
 
 Zie ook het artikel op <a href="https://energienerds.nl/index.php/2026/08/15/home-assistant-integratie-anker-solix-zendure" target="_blank" rel="noopener"> energienerds.nl</a> over deze integratie!
 
