@@ -3,7 +3,7 @@
  * Resource / extra_module_url: /local/zendure-schedule/zendure-schedule.js
  */
 
-const CARD_VERSION = "1.0.55";
+const CARD_VERSION = "1.0.56";
 const LOGO_URL = `/local/zendure-schedule/energienerds-logo.png?v=${CARD_VERSION}`;
 const BRAND_URL = "https://energienerds.nl";
 const STORAGE_PREFIX = "zendure-schedule-integration:v1:";
@@ -581,21 +581,26 @@ class ZendureScheduleCard extends HTMLElement {
     return this._config?.nordpool_entity || "";
   }
 
-  /**
-   * Gemiddelde prijs per uur (0–23) uit Nord Pool today/raw_today (kale prijs).
-   * Ondersteunt 15-min (96) en uurlijkse (24) series.
-   * Bij incl_eb=true én ingevulde eb_en_kosten: die waarde optellen.
-   */
-  _nordpoolHourlyPrices() {
+  _nordpoolAttrs() {
     const entityId = this._nordpoolEntityId();
     if (!entityId || !this._hass?.states?.[entityId]) return null;
-    const attrs = this._hass.states[entityId].attributes || {};
+    return this._hass.states[entityId].attributes || {};
+  }
 
-    let rows = null;
+  /** Morgenprijzen beschikbaar (meestal vanaf ~13:00). */
+  _nordpoolTomorrowValid() {
+    const attrs = this._nordpoolAttrs();
+    return !!attrs?.tomorrow_valid;
+  }
 
-    if (Array.isArray(attrs.raw_today) && attrs.raw_today.length) {
+  /**
+   * Kale uurprijzen (0–23) uit raw_* of today/tomorrow-array.
+   * @returns {Map<number, number>|null}
+   */
+  _nordpoolDayPriceMap(rawArr, seriesArr) {
+    if (Array.isArray(rawArr) && rawArr.length) {
       const buckets = Array.from({ length: 24 }, () => []);
-      for (const row of attrs.raw_today) {
+      for (const row of rawArr) {
         const start = row?.start ? new Date(row.start) : null;
         const val = Number(row?.value);
         if (!start || Number.isNaN(start.getTime()) || !Number.isFinite(val)) {
@@ -603,46 +608,76 @@ class ZendureScheduleCard extends HTMLElement {
         }
         buckets[start.getHours()].push(val);
       }
-      rows = buckets
-        .map((vals, hour) =>
-          vals.length
-            ? {
-                hour,
-                price: vals.reduce((a, b) => a + b, 0) / vals.length,
-              }
-            : null
-        )
-        .filter(Boolean);
-    } else {
-      const today = attrs.today;
-      if (!Array.isArray(today) || !today.length) return null;
+      const map = new Map();
+      buckets.forEach((vals, hour) => {
+        if (vals.length) {
+          map.set(hour, vals.reduce((a, b) => a + b, 0) / vals.length);
+        }
+      });
+      return map.size ? map : null;
+    }
 
-      if (today.length >= 96) {
-        const out = [];
-        for (let h = 0; h < 24; h++) {
-          const slice = today
-            .slice(h * 4, h * 4 + 4)
-            .map(Number)
-            .filter(Number.isFinite);
-          if (slice.length) {
-            out.push({
-              hour: h,
-              price: slice.reduce((a, b) => a + b, 0) / slice.length,
-            });
-          }
+    if (!Array.isArray(seriesArr) || !seriesArr.length) return null;
+
+    const map = new Map();
+    if (seriesArr.length >= 96) {
+      for (let h = 0; h < 24; h++) {
+        const slice = seriesArr
+          .slice(h * 4, h * 4 + 4)
+          .map(Number)
+          .filter(Number.isFinite);
+        if (slice.length) {
+          map.set(h, slice.reduce((a, b) => a + b, 0) / slice.length);
         }
-        rows = out.length ? out : null;
-      } else if (today.length >= 24) {
-        const out = [];
-        for (let h = 0; h < 24; h++) {
-          const price = Number(today[h]);
-          if (Number.isFinite(price)) out.push({ hour: h, price });
-        }
-        rows = out.length ? out : null;
+      }
+    } else if (seriesArr.length >= 24) {
+      for (let h = 0; h < 24; h++) {
+        const price = Number(seriesArr[h]);
+        if (Number.isFinite(price)) map.set(h, price);
+      }
+    }
+    return map.size ? map : null;
+  }
+
+  /**
+   * Uurprijzen voor de EPEX-grafiek (kale Nord Pool + optionele EB).
+   * Zonder tomorrow_valid: hele vandaag (0–23).
+   * Met tomorrow_valid: komende 24 uur vanaf nu (vandaag→morgen).
+   */
+  _nordpoolHourlyPrices() {
+    const attrs = this._nordpoolAttrs();
+    if (!attrs) return null;
+
+    const todayMap = this._nordpoolDayPriceMap(attrs.raw_today, attrs.today);
+    if (!todayMap) return null;
+
+    const tomorrowValid = this._nordpoolTomorrowValid();
+    const tomorrowMap = tomorrowValid
+      ? this._nordpoolDayPriceMap(attrs.raw_tomorrow, attrs.tomorrow)
+      : null;
+
+    let rows;
+    if (tomorrowValid && tomorrowMap?.size) {
+      const nowHour = new Date().getHours();
+      rows = [];
+      for (let i = 0; i < 24; i++) {
+        const abs = nowHour + i;
+        const isTomorrow = abs >= 24;
+        const hour = abs % 24;
+        const price = isTomorrow ? tomorrowMap.get(hour) : todayMap.get(hour);
+        if (!Number.isFinite(price)) continue;
+        rows.push({ hour, price, isTomorrow, offset: i });
+      }
+    } else {
+      rows = [];
+      for (let hour = 0; hour < 24; hour++) {
+        const price = todayMap.get(hour);
+        if (!Number.isFinite(price)) continue;
+        rows.push({ hour, price, isTomorrow: false, offset: hour });
       }
     }
 
-    if (!rows?.length) return null;
+    if (!rows.length) return null;
 
     const fee = this._nordpoolEbAdjustment();
     if (!fee) return rows;
@@ -652,7 +687,7 @@ class ZendureScheduleCard extends HTMLElement {
     }));
   }
 
-  /** Selecteer de N goedkoopste of duurste uren van vandaag (geen modus zetten). */
+  /** Selecteer de N goedkoopste/duurste uren uit de huidige EPEX-venster. */
   _selectNordpoolHours(kind) {
     const prices = this._nordpoolHourlyPrices();
     if (!prices?.length) {
@@ -731,11 +766,12 @@ class ZendureScheduleCard extends HTMLElement {
     this._els?.nordpoolTip?.classList.add("hidden");
   }
 
-  _showNordpoolTip(col, price, hour) {
+  _showNordpoolTip(col, price, hour, isTomorrow = false) {
     const tip = this._els?.nordpoolTip;
     const chart = this._els?.nordpoolChart;
     if (!tip || !chart || !col) return;
-    tip.textContent = `${String(hour).padStart(2, "0")}:00 · ${this._formatNordpoolPrice(price)}`;
+    const dayHint = isTomorrow ? " morgen" : "";
+    tip.textContent = `${String(hour).padStart(2, "0")}:00${dayHint} · ${this._formatNordpoolPrice(price)}`;
     tip.classList.remove("hidden");
     const chartBox = chart.getBoundingClientRect();
     const colBox = col.getBoundingClientRect();
@@ -769,7 +805,7 @@ class ZendureScheduleCard extends HTMLElement {
       return;
     }
 
-    const byHour = new Map(prices.map((row) => [row.hour, row.price]));
+    const rolling = prices.some((row) => row.isTomorrow);
     const vals = prices.map((row) => row.price);
     // Absolute schaal t.o.v. 0, zodat optellen van eb_en_kosten de kolommen
     // zichtbaar wijzigt (relatieve min→max blijft bij een vaste opslag gelijk).
@@ -783,19 +819,25 @@ class ZendureScheduleCard extends HTMLElement {
     const inclEb = this._inclEb();
     const ebFee = this._ebEnKosten();
     const nowHour = new Date().getHours();
-    const sig = `${this._nordpoolEntityId()}|${this._aantalUren()}|${kleurrijk}|${inclEb}|${ebFee}|${nowHour}|${prices
-      .map((row) => `${row.hour}:${row.price}`)
+    const sig = `${this._nordpoolEntityId()}|${this._aantalUren()}|${kleurrijk}|${inclEb}|${ebFee}|${rolling}|${nowHour}|${prices
+      .map((row) => `${row.offset}:${row.hour}:${row.price}`)
       .join(",")}`;
     if (
       !force &&
       sig === this._lastNordpoolChartSig &&
-      bars.childElementCount === 24 &&
+      bars.childElementCount === prices.length &&
       !wrap.classList.contains("hidden")
     ) {
       this._syncNordpoolHoursUi();
       return;
     }
     this._lastNordpoolChartSig = sig;
+
+    const titleText = rolling ? "EPEX vandaag en morgen" : "EPEX Vandaag";
+    if (this._els.nordpoolTitle) {
+      this._els.nordpoolTitle.textContent = titleText;
+    }
+    wrap.setAttribute("aria-label", titleText);
 
     if (this._els.nordpoolUnit) {
       const unit = this._nordpoolPriceUnit();
@@ -804,18 +846,19 @@ class ZendureScheduleCard extends HTMLElement {
     }
 
     bars.innerHTML = "";
-    for (let h = 0; h < 24; h++) {
-      const price = byHour.get(h);
+    for (const row of prices) {
+      const { hour, price, isTomorrow, offset } = row;
       const col = document.createElement("div");
       col.className = "np-col";
+      if (isTomorrow) col.classList.add("is-tomorrow");
       if (!Number.isFinite(price)) {
         col.classList.add("is-empty");
       } else {
         const pct = 8 + ((price - min) / span) * 92;
         col.style.setProperty("--h", `${Math.max(4, pct)}%`);
-        if (cheap.has(h) && expensive.has(h)) col.classList.add("is-both");
-        else if (cheap.has(h)) col.classList.add("is-cheap");
-        else if (expensive.has(h)) col.classList.add("is-expensive");
+        if (cheap.has(hour) && expensive.has(hour)) col.classList.add("is-both");
+        else if (cheap.has(hour)) col.classList.add("is-cheap");
+        else if (expensive.has(hour)) col.classList.add("is-expensive");
         else if (kleurrijk) {
           col.style.setProperty(
             "--np-tone",
@@ -823,20 +866,24 @@ class ZendureScheduleCard extends HTMLElement {
           );
           col.classList.add("is-tone");
         }
-        col.title = `${String(h).padStart(2, "0")}:00 · ${this._formatNordpoolPrice(price)}`;
+        const dayHint = isTomorrow ? " (morgen)" : "";
+        col.title = `${String(hour).padStart(2, "0")}:00${dayHint} · ${this._formatNordpoolPrice(price)}`;
         col.addEventListener("pointerenter", () => {
-          this._showNordpoolTip(col, price, h);
+          this._showNordpoolTip(col, price, hour, isTomorrow);
         });
         col.addEventListener("pointermove", () => {
-          this._showNordpoolTip(col, price, h);
+          this._showNordpoolTip(col, price, hour, isTomorrow);
         });
         col.addEventListener("pointerleave", () => this._hideNordpoolTip());
         col.addEventListener("click", () => {
-          this._toggleHourSelection(h);
+          this._toggleHourSelection(hour);
         });
       }
-      if (h === nowHour) col.classList.add("is-now");
-      col.innerHTML = `<div class="np-bar"></div><div class="np-label">${String(h).padStart(2, "0")}</div>`;
+      // Huidig uur = eerste kolom in rolling venster, anders klokuur vandaag
+      if (rolling ? offset === 0 : hour === nowHour) {
+        col.classList.add("is-now");
+      }
+      col.innerHTML = `<div class="np-bar"></div><div class="np-label">${String(hour).padStart(2, "0")}</div>`;
       bars.appendChild(col);
     }
 
@@ -1441,6 +1488,7 @@ class ZendureScheduleCard extends HTMLElement {
       brushRow: card.querySelector(".brush-row"),
       selectionClear: card.querySelector(".selection-clear"),
       nordpoolChart: card.querySelector(".nordpool-chart"),
+      nordpoolTitle: card.querySelector(".nordpool-chart-title"),
       nordpoolBars: card.querySelector(".nordpool-chart-bars"),
       nordpoolUnit: card.querySelector(".nordpool-chart-unit"),
       nordpoolTip: card.querySelector(".nordpool-chart-tip"),
@@ -2672,6 +2720,7 @@ class ZendureScheduleCard extends HTMLElement {
         outline: 2px solid rgba(234,246,255,0.9);
         outline-offset: 1px;
       }
+      .np-col.is-tomorrow .np-label { color: #7eb8d4; opacity: 0.85; }
       .np-col:hover .np-bar { filter: brightness(1.18); }
       .np-label {
         font-size: 8px; line-height: 1; color: #9fc4d6;
